@@ -1,0 +1,131 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-stout: #0d0a08;
+  --color-stout-2: #1c1410;
+  --color-cream: #f4ecdb;
+  --color-cream-dim: #cfc2a6;
+  --color-gold: #c8a44d;
+  --color-gold-bright: #e8cf8d;
+  --font-display: var(--font-fraunces), Georgia, 'Times New Roman', serif;
+}
+
+html,
+body {
+  min-height: 100%;
+  color: var(--color-cream);
+  font-family: var(--font-display);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--color-stout);
+  background-image:
+    radial-gradient(120% 90% at 50% -10%, #2a1e15 0%, #15100c 45%, #0d0a08 100%);
+  background-attachment: fixed;
+}
+
+/* ---------- gold shimmer for big celebratory text ---------- */
+.shimmer {
+  background: linear-gradient(
+    100deg,
+    #a8843a 0%,
+    #e8cf8d 25%,
+    #fdf3d3 50%,
+    #e8cf8d 75%,
+    #a8843a 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2.4s linear infinite;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ---------- pouring pint loader ---------- */
+.pint {
+  position: relative;
+  width: 5.5rem;
+  height: 8.5rem;
+  border: 3px solid color-mix(in srgb, var(--color-cream) 45%, transparent);
+  border-top: none;
+  border-radius: 0.4rem 0.4rem 1.6rem 1.6rem;
+  overflow: hidden;
+  /* gentle gravity-glass taper */
+  clip-path: polygon(0% 0%, 100% 0%, 88% 100%, 12% 100%);
+}
+
+.pint::before {
+  /* the stout */
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, #3a2417 0%, #160d08 35%);
+  animation: pour 2.6s ease-in-out infinite;
+}
+
+.pint::after {
+  /* the head, riding on top of the stout */
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 1.1rem;
+  background: linear-gradient(180deg, #fdf6e4, #e9d9b4);
+  border-radius: 2px;
+  animation: head 2.6s ease-in-out infinite;
+}
+
+@keyframes pour {
+  0% {
+    height: 8%;
+  }
+  70%,
+  100% {
+    height: 86%;
+  }
+}
+
+@keyframes head {
+  0% {
+    transform: translateY(0);
+    bottom: 8%;
+  }
+  70%,
+  100% {
+    bottom: 86%;
+    transform: translateY(100%);
+  }
+}
+
+/* ---------- the split G monogram ---------- */
+.split-g {
+  position: relative;
+  display: inline-block;
+  line-height: 1;
+}
+
+.split-g::after {
+  content: '';
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  top: 52%;
+  height: 0.045em;
+  background: linear-gradient(90deg, transparent, var(--color-gold) 12%, var(--color-gold-bright) 50%, var(--color-gold) 88%, transparent);
+}
+
+/* gold hairline rules */
+.rule {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-gold) 65%, transparent), transparent);
+}
