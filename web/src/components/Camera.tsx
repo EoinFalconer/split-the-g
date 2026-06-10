@@ -17,6 +17,8 @@ export function Camera({
   const streamRef = useRef<MediaStream | null>(null)
   const [status, setStatus] = useState<CameraStatus>('starting')
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
+  // Kiosk default: the player faces the screen, so use the front camera.
+  const [facing, setFacing] = useState<'user' | 'environment'>('user')
 
   useEffect(() => {
     let cancelled = false
@@ -25,8 +27,9 @@ export function Camera({
       setErrorDetail('This browser does not support camera access.')
       return
     }
+    setStatus('starting')
     navigator.mediaDevices
-      .getUserMedia({video: {facingMode: 'environment'}, audio: false})
+      .getUserMedia({video: {facingMode: facing}, audio: false})
       .then((stream) => {
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop())
@@ -53,8 +56,9 @@ export function Camera({
     return () => {
       cancelled = true
       streamRef.current?.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
     }
-  }, [])
+  }, [facing])
 
   const capture = useCallback(() => {
     const video = videoRef.current
@@ -93,6 +97,12 @@ export function Camera({
       <div className="flex w-full max-w-md flex-col items-center gap-6 text-center">
         <p className="text-3xl">{label}</p>
         <p className="text-xl text-gold">{errorDetail}</p>
+        <button
+          onClick={() => setFacing(facing === 'user' ? 'environment' : 'user')}
+          className="text-base uppercase tracking-[0.3em] text-cream/40 underline-offset-8 active:underline"
+        >
+          try the other camera
+        </button>
         {fileFallback}
       </div>
     )
@@ -102,13 +112,16 @@ export function Camera({
     <div className="flex w-full flex-col items-center gap-7">
       <p className="max-w-lg text-center text-2xl italic text-cream-dim sm:text-3xl">{label}</p>
       <div className="relative w-full max-w-md rounded-3xl border border-gold/60 p-2 shadow-[0_0_60px_rgba(200,164,77,0.12)]">
+        {/* Mirror the front-camera preview like a mirror; captures stay unmirrored */}
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
           onLoadedData={() => setStatus('live')}
-          className="aspect-[3/4] w-full rounded-2xl border border-cream/15 object-cover"
+          className={`aspect-[3/4] w-full rounded-2xl border border-cream/15 object-cover ${
+            facing === 'user' ? '-scale-x-100' : ''
+          }`}
         />
         {status === 'starting' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-2xl">
@@ -125,6 +138,12 @@ export function Camera({
         className="h-24 w-24 rounded-full border-4 border-cream/70 bg-gradient-to-b from-gold-bright to-gold shadow-[0_8px_30px_rgba(200,164,77,0.35)] transition active:scale-90 disabled:opacity-30"
         aria-label="Take photo"
       />
+      <button
+        onClick={() => setFacing(facing === 'user' ? 'environment' : 'user')}
+        className="text-base uppercase tracking-[0.3em] text-cream/40 underline-offset-8 active:underline"
+      >
+        flip camera
+      </button>
     </div>
   )
 }
