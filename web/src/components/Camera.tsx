@@ -37,6 +37,8 @@ export function Camera({
   const [facing, setFacing] = useState<'user' | 'environment'>('user')
   const [liveScore, setLiveScore] = useState<number | null>(null)
   const [holding, setHolding] = useState(false)
+  // null = loading/not applicable, true = auto-capture armed, false = model failed
+  const [detectorReady, setDetectorReady] = useState<boolean | null>(null)
 
   const capture = useCallback(() => {
     const video = videoRef.current
@@ -125,7 +127,18 @@ export function Camera({
     }
 
     const run = async () => {
-      const {detect} = await import('@/lib/detector')
+      let detect: typeof import('@/lib/detector').detect
+      try {
+        const mod = await import('@/lib/detector')
+        await mod.loadDetector()
+        detect = mod.detect
+      } catch (err) {
+        console.error('Live detector unavailable, falling back to manual:', err)
+        setDetectorReady(false)
+        return
+      }
+      if (stopped) return
+      setDetectorReady(true)
       while (!stopped) {
         const video = videoRef.current
         if (video && video.videoWidth) {
@@ -155,8 +168,10 @@ export function Camera({
               s.last = null
               setHolding(false)
             }
-          } catch {
-            return // model unavailable — stay in manual mode
+          } catch (err) {
+            console.error('Live detection stopped, falling back to manual:', err)
+            setDetectorReady(false)
+            return
           }
         }
         await new Promise((r) => setTimeout(r, 80))
@@ -165,8 +180,11 @@ export function Camera({
     run()
     return () => {
       stopped = true
+      setDetectorReady(null)
     }
   }, [mode, phase, status, capture])
+
+  const autoArmed = LIVE_DETECTOR && phase != null && detectorReady === true
 
   const fileFallback = (
     <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-cream/40 px-6 py-4 text-xl">
@@ -238,18 +256,34 @@ export function Camera({
           </div>
         )}
       </div>
-      <button
-        onClick={capture}
-        disabled={status !== 'live'}
-        className="h-24 w-24 rounded-full border-4 border-cream/70 bg-gradient-to-b from-gold-bright to-gold shadow-[0_8px_30px_rgba(200,164,77,0.35)] transition active:scale-90 disabled:opacity-30"
-        aria-label="Take photo"
-      />
-      <button
-        onClick={() => setFacing(facing === 'user' ? 'environment' : 'user')}
-        className="text-base uppercase tracking-[0.3em] text-cream/40 underline-offset-8 active:underline"
-      >
-        flip camera
-      </button>
+      {autoArmed ? (
+        <p className="text-xl italic text-cream-dim">
+          No button needed — hold the pint steady and it snaps itself.
+        </p>
+      ) : (
+        <button
+          onClick={capture}
+          disabled={status !== 'live'}
+          className="h-24 w-24 rounded-full border-4 border-cream/70 bg-gradient-to-b from-gold-bright to-gold shadow-[0_8px_30px_rgba(200,164,77,0.35)] transition active:scale-90 disabled:opacity-30"
+          aria-label="Take photo"
+        />
+      )}
+      <div className="flex items-center gap-8">
+        {autoArmed && (
+          <button
+            onClick={capture}
+            className="text-base uppercase tracking-[0.3em] text-cream/40 underline-offset-8 active:underline"
+          >
+            snap manually
+          </button>
+        )}
+        <button
+          onClick={() => setFacing(facing === 'user' ? 'environment' : 'user')}
+          className="text-base uppercase tracking-[0.3em] text-cream/40 underline-offset-8 active:underline"
+        >
+          flip camera
+        </button>
+      </div>
     </div>
   )
 }
