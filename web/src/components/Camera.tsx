@@ -1,24 +1,54 @@
 'use client'
 
 import {useCallback, useEffect, useRef, useState} from 'react'
+import type {Detection} from '@/lib/detector'
 
 type CameraStatus = 'starting' | 'live' | 'error'
 
+const LIVE_DETECTOR = process.env.NEXT_PUBLIC_LIVE_DETECTOR === '1'
+const STABLE_FRAMES_TO_CAPTURE = 16 // ~2s at ~8fps
+const LINE_TOLERANCE_PX = 10
+
 // Live viewfinder for the bar-top iPad. Uses getUserMedia (requires HTTPS or
 // localhost); falls back to a native file input if the camera is unavailable.
+// When NEXT_PUBLIC_LIVE_DETECTOR=1 and a mode is given, an in-browser YOLO
+// model tracks the G live, shows a provisional score, and auto-captures when
+// the player holds steady (docs/live-detection-spec.md).
 export function Camera({
   label,
   onCapture,
+  mode,
 }: {
   label: string
   onCapture: (photo: Blob) => void
+  mode?: 'splitG' | 'dropHarp'
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const overlayRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const stableRef = useRef({count: 0, lastLineY: null as number | null, captured: false})
   const [status, setStatus] = useState<CameraStatus>('starting')
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
   // Kiosk default: the player faces the screen, so use the front camera.
   const [facing, setFacing] = useState<'user' | 'environment'>('user')
+  const [liveScore, setLiveScore] = useState<number | null>(null)
+  const [holding, setHolding] = useState(false)
+
+  const capture = useCallback(() => {
+    const video = videoRef.current
+    if (!video || !video.videoWidth) return
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext('2d')!.drawImage(video, 0, 0)
+    canvas.toBlob(
+      (blob) => {
+        if (blob) onCapture(blob)
+      },
+      'image/jpeg',
+      0.85,
+    )
+  }, [onCapture])
 
   useEffect(() => {
     let cancelled = false
@@ -60,21 +90,75 @@ export function Camera({
     }
   }, [facing])
 
-  const capture = useCallback(() => {
-    const video = videoRef.current
-    if (!video || !video.videoWidth) return
-    const canvas = document.createElement('canvas')
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    canvas.getContext('2d')!.drawImage(video, 0, 0)
-    canvas.toBlob(
-      (blob) => {
-        if (blob) onCapture(blob)
-      },
-      'image/jpeg',
-      0.85,
-    )
-  }, [onCapture])
+  // Live detection loop (feature-flagged; silently disabled if model missing).
+  useEffect(() => {
+    if (!LIVE_DETECTOR || !mode || status !== 'live') return
+    let stopped = false
+    stableRef.current = {count: 0, lastLineY: null, captured: false}
+
+    const draw = (det: Detection | null) => {
+      const video = videoRef.current
+      const canvas = overlayRef.current
+      if (!video || !canvas) return
+      if (canvas.width !== video.videoWidth) {
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+      }
+      const ctx = canvas.getContext('2d')!
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      if (!det) return
+      const {box, lineY} = det
+      ctx.strokeStyle = '#e8cf8d'
+      ctx.lineWidth = Math.max(3, canvas.width / 200)
+      ctx.strokeRect(box.x, box.y, box.w, box.h)
+      if (lineY != null) {
+        ctx.strokeStyle = det.hit ? '#7ddf8a' : '#f4ecdb'
+        ctx.beginPath()
+        ctx.moveTo(Math.max(0, box.x - box.w), lineY)
+        ctx.lineTo(Math.min(canvas.width, box.x + box.w * 2), lineY)
+        ctx.stroke()
+      }
+    }
+
+    const run = async () => {
+      const {detect} = await import('@/lib/detector')
+      while (!stopped) {
+        const video = videoRef.current
+        if (video && video.videoWidth) {
+          try {
+            const det = await detect(video, mode)
+            if (stopped) return
+            draw(det)
+            setLiveScore(det?.score ?? null)
+            const s = stableRef.current
+            if (det?.lineY != null) {
+              const stable =
+                s.lastLineY != null && Math.abs(det.lineY - s.lastLineY) < LINE_TOLERANCE_PX
+              s.count = stable ? s.count + 1 : 0
+              s.lastLineY = det.lineY
+              setHolding(s.count >= STABLE_FRAMES_TO_CAPTURE / 2)
+              if (s.count >= STABLE_FRAMES_TO_CAPTURE && !s.captured) {
+                s.captured = true
+                capture()
+                return
+              }
+            } else {
+              s.count = 0
+              s.lastLineY = null
+              setHolding(false)
+            }
+          } catch {
+            return // model unavailable — stay in manual mode
+          }
+        }
+        await new Promise((r) => setTimeout(r, 80))
+      }
+    }
+    run()
+    return () => {
+      stopped = true
+    }
+  }, [mode, status, capture])
 
   const fileFallback = (
     <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-cream/40 px-6 py-4 text-xl">
@@ -108,6 +192,8 @@ export function Camera({
     )
   }
 
+  const mirrored = facing === 'user' ? '-scale-x-100' : ''
+
   return (
     <div className="flex w-full flex-col items-center gap-7">
       <p className="max-w-lg text-center text-2xl italic text-cream-dim sm:text-3xl">{label}</p>
@@ -119,9 +205,11 @@ export function Camera({
           playsInline
           muted
           onLoadedData={() => setStatus('live')}
-          className={`aspect-[3/4] w-full rounded-2xl border border-cream/15 object-cover ${
-            facing === 'user' ? '-scale-x-100' : ''
-          }`}
+          className={`aspect-[3/4] w-full rounded-2xl border border-cream/15 object-cover ${mirrored}`}
+        />
+        <canvas
+          ref={overlayRef}
+          className={`pointer-events-none absolute inset-2 h-[calc(100%-1rem)] w-[calc(100%-1rem)] rounded-2xl object-cover ${mirrored}`}
         />
         {status === 'starting' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-2xl">
@@ -129,6 +217,12 @@ export function Camera({
             <p className="px-8 text-center text-xl italic text-cream/80">
               Waiting for the camera… if the browser asks for permission, tap Allow.
             </p>
+          </div>
+        )}
+        {liveScore != null && (
+          <div className="absolute left-1/2 top-5 -translate-x-1/2 rounded-full bg-stout/80 px-5 py-2 text-2xl font-bold tabular-nums text-gold-bright">
+            {liveScore.toFixed(2)}
+            {holding && <span className="ml-3 text-base italic text-cream-dim">hold it…</span>}
           </div>
         )}
       </div>

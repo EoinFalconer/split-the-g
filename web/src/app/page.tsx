@@ -272,6 +272,7 @@ export default function Kiosk() {
       {phase === 'captureSplit' && player && (
         <Camera
           label={`${player.name} — show the judge the ${mode === 'dropHarp' ? 'harp' : 'G'}`}
+          mode={mode}
           onCapture={(photo) => sendPhoto(photo, 'split')}
         />
       )}
