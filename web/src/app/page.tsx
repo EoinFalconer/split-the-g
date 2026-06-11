@@ -237,7 +237,9 @@ export default function Kiosk() {
 
       {phase === 'captureFull' && player && (
         <Camera
-          label={`${player.name} — present your full pint to the judge`}
+          label={`${player.name} — hold your full pint up to the camera`}
+          phase="full"
+          mode={mode}
           onCapture={(photo) =>
             attempt ? sendPhoto(photo, 'full') : startAttempt(photo)
           }
@@ -272,6 +274,7 @@ export default function Kiosk() {
       {phase === 'captureSplit' && player && (
         <Camera
           label={`${player.name} — show the judge the ${mode === 'dropHarp' ? 'harp' : 'G'}`}
+          phase="split"
           mode={mode}
           onCapture={(photo) => sendPhoto(photo, 'split')}
         />

@@ -17,16 +17,20 @@ const LINE_TOLERANCE_PX = 10
 export function Camera({
   label,
   onCapture,
-  mode,
+  mode = 'splitG',
+  phase,
 }: {
   label: string
   onCapture: (photo: Blob) => void
   mode?: 'splitG' | 'dropHarp'
+  // 'full': auto-capture when the G logo is held steady (no line/score needed).
+  // 'split': auto-capture when the beer line is held steady; shows live score.
+  phase?: 'full' | 'split'
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const stableRef = useRef({count: 0, lastLineY: null as number | null, captured: false})
+  const stableRef = useRef({count: 0, last: null as number | null, captured: false})
   const [status, setStatus] = useState<CameraStatus>('starting')
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
   // Kiosk default: the player faces the screen, so use the front camera.
@@ -92,9 +96,9 @@ export function Camera({
 
   // Live detection loop (feature-flagged; silently disabled if model missing).
   useEffect(() => {
-    if (!LIVE_DETECTOR || !mode || status !== 'live') return
+    if (!LIVE_DETECTOR || !phase || status !== 'live') return
     let stopped = false
-    stableRef.current = {count: 0, lastLineY: null, captured: false}
+    stableRef.current = {count: 0, last: null, captured: false}
 
     const draw = (det: Detection | null) => {
       const video = videoRef.current
@@ -111,7 +115,7 @@ export function Camera({
       ctx.strokeStyle = '#e8cf8d'
       ctx.lineWidth = Math.max(3, canvas.width / 200)
       ctx.strokeRect(box.x, box.y, box.w, box.h)
-      if (lineY != null) {
+      if (phase === 'split' && lineY != null) {
         ctx.strokeStyle = det.hit ? '#7ddf8a' : '#f4ecdb'
         ctx.beginPath()
         ctx.moveTo(Math.max(0, box.x - box.w), lineY)
@@ -129,13 +133,17 @@ export function Camera({
             const det = await detect(video, mode)
             if (stopped) return
             draw(det)
-            setLiveScore(det?.score ?? null)
+            setLiveScore(phase === 'split' ? (det?.score ?? null) : null)
+            // Stability signal: the beer line for split shots, the G box
+            // position for the full-pint proof (a full pint's line sits far
+            // above the logo, outside the line-finder's band).
+            const signal =
+              phase === 'split' ? (det?.lineY ?? null) : det ? det.box.y + det.box.h / 2 : null
             const s = stableRef.current
-            if (det?.lineY != null) {
-              const stable =
-                s.lastLineY != null && Math.abs(det.lineY - s.lastLineY) < LINE_TOLERANCE_PX
+            if (signal != null) {
+              const stable = s.last != null && Math.abs(signal - s.last) < LINE_TOLERANCE_PX
               s.count = stable ? s.count + 1 : 0
-              s.lastLineY = det.lineY
+              s.last = signal
               setHolding(s.count >= STABLE_FRAMES_TO_CAPTURE / 2)
               if (s.count >= STABLE_FRAMES_TO_CAPTURE && !s.captured) {
                 s.captured = true
@@ -144,7 +152,7 @@ export function Camera({
               }
             } else {
               s.count = 0
-              s.lastLineY = null
+              s.last = null
               setHolding(false)
             }
           } catch {
@@ -158,7 +166,7 @@ export function Camera({
     return () => {
       stopped = true
     }
-  }, [mode, status, capture])
+  }, [mode, phase, status, capture])
 
   const fileFallback = (
     <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-cream/40 px-6 py-4 text-xl">
@@ -219,10 +227,14 @@ export function Camera({
             </p>
           </div>
         )}
-        {liveScore != null && (
+        {(liveScore != null || holding) && (
           <div className="absolute left-1/2 top-5 -translate-x-1/2 rounded-full bg-stout/80 px-5 py-2 text-2xl font-bold tabular-nums text-gold-bright">
-            {liveScore.toFixed(2)}
-            {holding && <span className="ml-3 text-base italic text-cream-dim">hold it…</span>}
+            {liveScore != null && liveScore.toFixed(2)}
+            {holding && (
+              <span className={`italic text-cream-dim ${liveScore != null ? 'ml-3 text-base' : 'text-xl'}`}>
+                hold it…
+              </span>
+            )}
           </div>
         )}
       </div>
