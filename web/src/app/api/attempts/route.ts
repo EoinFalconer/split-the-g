@@ -5,6 +5,7 @@ export async function POST(req: Request) {
   const form = await req.formData()
   const playerId = form.get('playerId')
   const photo = form.get('photo')
+  const mode = form.get('mode') === 'dropHarp' ? 'dropHarp' : 'splitG'
   if (typeof playerId !== 'string' || !(photo instanceof File)) {
     return NextResponse.json({error: 'playerId and photo are required'}, {status: 400})
   }
@@ -18,6 +19,7 @@ export async function POST(req: Request) {
   const attempt = await sanity.create({
     _type: 'attempt',
     player: {_type: 'reference', _ref: playerId},
+    mode,
     status: 'judgingFullPint',
     fullPint: {
       _type: 'image',

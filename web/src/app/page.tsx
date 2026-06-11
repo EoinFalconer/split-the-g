@@ -17,12 +17,34 @@ type Attempt = {
 
 type Phase =
   | 'pickPlayer'
+  | 'pickMode'
   | 'captureFull'
   | 'judgingFull'
   | 'readyToDrink'
   | 'captureSplit'
   | 'judgingSplit'
   | 'result'
+
+type Mode = 'splitG' | 'dropHarp'
+
+const MODES: Record<Mode, {title: React.ReactNode; tagline: string; aim: string; win: string}> = {
+  splitG: {
+    title: (
+      <>
+        Split the <span className="split-g italic text-gold-bright">G</span>
+      </>
+    ),
+    tagline: 'land the line through the heart of the G',
+    aim: 'Aim for the heart of the G.',
+    win: 'G split!',
+  },
+  dropHarp: {
+    title: <>Drop the Harp</>,
+    tagline: 'the old-school way — land it between the harp and the word',
+    aim: 'Land it in the gap below the harp.',
+    win: 'Harp dropped!',
+  },
+}
 
 const goldButton =
   'rounded-full bg-gradient-to-b from-gold-bright to-gold px-10 py-5 text-2xl font-bold tracking-wide text-stout shadow-[0_8px_30px_rgba(200,164,77,0.25)] transition active:scale-95'
@@ -31,6 +53,7 @@ export default function Kiosk() {
   const [phase, setPhase] = useState<Phase>('pickPlayer')
   const [players, setPlayers] = useState<Player[]>([])
   const [player, setPlayer] = useState<Player | null>(null)
+  const [mode, setMode] = useState<Mode>('splitG')
   const [newName, setNewName] = useState('')
   const [attempt, setAttempt] = useState<Attempt | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -95,13 +118,14 @@ export default function Kiosk() {
       setNotice(null)
       const form = new FormData()
       form.append('playerId', player._id)
+      form.append('mode', mode)
       form.append('photo', photo, 'full.jpg')
       const res = await fetch('/api/attempts', {method: 'POST', body: form})
       const {_id} = await res.json()
       setAttempt({_id, status: 'judgingFullPint'})
       pollUntilJudged(_id)
     },
-    [player, pollUntilJudged],
+    [player, mode, pollUntilJudged],
   )
 
   const sendPhoto = useCallback(
@@ -137,7 +161,7 @@ export default function Kiosk() {
     const created: Player = await res.json()
     setNewName('')
     setPlayer(created)
-    setPhase('captureFull')
+    setPhase('pickMode')
   }, [newName])
 
   return (
@@ -160,7 +184,7 @@ export default function Kiosk() {
                   key={p._id}
                   onClick={() => {
                     setPlayer(p)
-                    setPhase('captureFull')
+                    setPhase('pickMode')
                   }}
                   className="rounded-full border border-gold/50 bg-stout-2/60 px-7 py-3 text-2xl text-cream transition active:bg-gold active:text-stout"
                 >
@@ -190,6 +214,27 @@ export default function Kiosk() {
         </section>
       )}
 
+      {phase === 'pickMode' && player && (
+        <section className="flex w-full max-w-xl flex-col items-center gap-8">
+          <p className="text-3xl italic text-cream-dim">{player.name}, choose your challenge</p>
+          <div className="flex w-full flex-col gap-4">
+            {(Object.keys(MODES) as Mode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => {
+                  setMode(m)
+                  setPhase('captureFull')
+                }}
+                className="flex flex-col items-center gap-1 rounded-3xl border border-gold/50 bg-stout-2/60 px-8 py-6 transition active:bg-gold/20"
+              >
+                <span className="text-4xl font-bold text-cream">{MODES[m].title}</span>
+                <span className="text-lg italic text-cream-dim">{MODES[m].tagline}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       {phase === 'captureFull' && player && (
         <Camera
           label={`${player.name} — present your full pint to the judge`}
@@ -203,15 +248,20 @@ export default function Kiosk() {
         <PourLoader message="The judge is inspecting your pint…" />
       )}
       {phase === 'judgingSplit' && (
-        <PourLoader message="The judge is studying the G…" />
+        <PourLoader
+          message={
+            mode === 'dropHarp'
+              ? 'The judge is studying the harp…'
+              : 'The judge is studying the G…'
+          }
+        />
       )}
 
       {phase === 'readyToDrink' && player && (
         <section className="flex flex-col items-center gap-8 py-4">
           <p className="shimmer text-5xl font-bold sm:text-6xl">Pint verified</p>
           <p className="max-w-lg text-2xl leading-relaxed text-cream-dim sm:text-3xl">
-            {player.name}, one drink. Aim for the heart of the{' '}
-            <span className="split-g italic text-gold-bright">G</span>.
+            {player.name}, one drink. {MODES[mode].aim}
           </p>
           <button onClick={() => setPhase('captureSplit')} className={goldButton}>
             I&apos;ve had my sip — judge me
@@ -221,7 +271,7 @@ export default function Kiosk() {
 
       {phase === 'captureSplit' && player && (
         <Camera
-          label={`${player.name} — show the judge the G`}
+          label={`${player.name} — show the judge the ${mode === 'dropHarp' ? 'harp' : 'G'}`}
           onCapture={(photo) => sendPhoto(photo, 'split')}
         />
       )}
@@ -229,7 +279,7 @@ export default function Kiosk() {
       {phase === 'result' && attempt?.splitVerdict && (
         <section className="flex flex-col items-center gap-7 py-4">
           {attempt.splitVerdict.split ? (
-            <p className="shimmer text-7xl font-bold sm:text-8xl">G split!</p>
+            <p className="shimmer text-7xl font-bold sm:text-8xl">{MODES[mode].win}</p>
           ) : (
             <p className="text-6xl font-bold text-cream/70 sm:text-7xl">No split</p>
           )}

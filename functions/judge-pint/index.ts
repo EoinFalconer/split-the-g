@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk'
 
 interface AttemptEvent {
   _id: string
+  mode: 'splitG' | 'dropHarp'
   fullPintUrl?: string
   splitPintUrl?: string
   hasFullVerdict: boolean
@@ -47,13 +48,12 @@ const SPLIT_SCHEMA: Record<string, unknown> = {
     },
     split: {
       type: 'boolean',
-      description:
-        'True if the beer/foam boundary line passes through the letter G of the GUINNESS logo on the glass (anywhere within the G counts)',
+      description: 'True if the beer/foam boundary line landed in the target zone for the challenge described in the prompt',
     },
     score: {
       type: 'number',
       description:
-        'Split quality from 0.0 to 5.0. 5.0 = line perfectly bisects the G through its horizontal bar. 3.75-5.0 = line is somewhere within the G. Below 3.75 = line missed the G, scored by how close it came (0.0 = nowhere near)',
+        'Accuracy from 0.0 to 5.0. 5.0 = line dead-centre of the target zone. 3.75-5.0 = line is somewhere within the target zone. Below 3.75 = line missed, scored by how close it came (0.0 = nowhere near)',
     },
     reason: {type: 'string', description: 'One-sentence factual justification'},
     banter: {
@@ -97,8 +97,26 @@ async function judgeImage(
   return JSON.parse(text.text)
 }
 
+const CHALLENGES = {
+  splitG: {
+    title: 'Split the G',
+    target: `the boundary line between the dark beer and the white head should pass through the
+letter G of the GUINNESS wordmark printed on the glass. Dead centre of the G is a perfect 5.0;
+anywhere within the G counts as a hit; a line above or below the G is a miss.`,
+  },
+  dropHarp: {
+    title: 'Drop the Harp',
+    target: `the boundary line between the dark beer and the white head should land in the gap
+between the bottom of the harp emblem and the top of the GUINNESS wordmark on the glass — the
+old-school challenge. Dead centre of that gap is a perfect 5.0; anywhere within the gap counts
+as a hit; a line touching the harp or the lettering is a miss.`,
+  },
+} as const
+
 export const handler = documentEventHandler<AttemptEvent>(async ({context, event}) => {
-  const {_id, fullPintUrl, splitPintUrl, hasFullVerdict, hasSplitVerdict, playerName} = event.data
+  const {_id, mode, fullPintUrl, splitPintUrl, hasFullVerdict, hasSplitVerdict, playerName} =
+    event.data
+  const challenge = CHALLENGES[mode] ?? CHALLENGES.splitG
   const client = createClient({...context.clientOptions, apiVersion: '2025-05-08'})
   const judgedAt = new Date().toISOString()
   const player = playerName || 'the player'
@@ -137,10 +155,9 @@ no sip visibly taken. A partially drunk pint, a different beer, or an empty/abse
   if (splitPintUrl && !hasSplitVerdict) {
     const verdict = await judgeImage(
       splitPintUrl,
-      `${player} has taken their first drink and claims to have "split the G": the boundary line
-between the dark beer and the white head should pass through the letter G of the GUINNESS logo
-printed on the glass. Locate the logo, locate the beer line, and judge whether the G is split
-and how cleanly. Be fair but strict — a line above or below the G is not a split.`,
+      `${player} has taken their first drink, playing "${challenge.title}": ${challenge.target}
+Locate the logo, locate the beer line, and judge whether the target was hit and how cleanly.
+Be fair but strict.`,
       SPLIT_SCHEMA,
     )
 

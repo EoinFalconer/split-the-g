@@ -6,13 +6,16 @@ import Link from 'next/link'
 type Row = {
   _id: string
   name: string
-  splits: number
+  gs: number
+  harps: number
+  points: number
   attempts: number
   best: number | null
 }
 
 type Latest = {
   playerName: string
+  mode: string
   splitVerdict: {split: boolean; score: number; banter?: string}
 } | null
 
@@ -60,6 +63,7 @@ export default function Leaderboard() {
           &ldquo;{latest.splitVerdict.banter}&rdquo;
           <footer className="mt-2 text-lg not-italic tracking-[0.3em] text-cream-dim">
             — the judge, on {latest.playerName}
+            {latest.mode === 'dropHarp' ? "'s harp drop" : "'s G split"}
           </footer>
         </blockquote>
       )}
@@ -69,7 +73,9 @@ export default function Leaderboard() {
           <tr className="text-left text-base uppercase tracking-[0.35em] text-cream-dim">
             <th className="px-4 pb-3 font-normal">#</th>
             <th className="pb-3 font-normal">Name</th>
-            <th className="pb-3 text-right font-normal">Gs split</th>
+            <th className="pb-3 text-right font-normal">Gs</th>
+            <th className="pb-3 text-right font-normal">Harps</th>
+            <th className="pb-3 text-right font-normal">Points</th>
             <th className="pb-3 text-right font-normal">Attempts</th>
             <th className="px-4 pb-3 text-right font-normal">Best</th>
           </tr>
@@ -88,7 +94,9 @@ export default function Leaderboard() {
                 {i === 0 ? '🏆' : i + 1}
               </td>
               <td className="py-4 font-bold">{p.name}</td>
-              <td className="py-4 text-right text-4xl font-bold tabular-nums">{p.splits}</td>
+              <td className="py-4 text-right tabular-nums">{p.gs}</td>
+              <td className="py-4 text-right tabular-nums">{p.harps}</td>
+              <td className="py-4 text-right text-4xl font-bold tabular-nums">{p.points}</td>
               <td className="py-4 text-right tabular-nums text-cream-dim">{p.attempts}</td>
               <td className="rounded-r-xl px-4 py-4 text-right tabular-nums">
                 {p.best != null ? p.best.toFixed(2) : '—'}
@@ -97,7 +105,7 @@ export default function Leaderboard() {
           ))}
           {players.length === 0 && (
             <tr>
-              <td colSpan={5} className="py-16 text-center text-2xl italic text-cream/40">
+              <td colSpan={7} className="py-16 text-center text-2xl italic text-cream/40">
                 No pints judged yet. Get pouring.
               </td>
             </tr>

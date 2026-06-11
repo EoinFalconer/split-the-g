@@ -14,7 +14,7 @@ export default defineBlueprint({
         filter:
           "_type == 'attempt' && ((defined(fullPint.asset) && !defined(fullPintVerdict)) || (defined(splitPint.asset) && !defined(splitVerdict)))",
         projection:
-          '{_id, "fullPintUrl": fullPint.asset->url, "splitPintUrl": splitPint.asset->url, "hasFullVerdict": defined(fullPintVerdict), "hasSplitVerdict": defined(splitVerdict), "playerName": player->name}',
+          '{_id, "mode": coalesce(mode, "splitG"), "fullPintUrl": fullPint.asset->url, "splitPintUrl": splitPint.asset->url, "hasFullVerdict": defined(fullPintVerdict), "hasSplitVerdict": defined(splitVerdict), "playerName": player->name}',
       },
     }),
   ],

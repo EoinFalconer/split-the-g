@@ -8,12 +8,14 @@ export async function GET() {
     "players": *[_type == "player"]{
       _id,
       name,
-      "splits": count(*[_type == "attempt" && player._ref == ^._id && splitVerdict.split == true]),
+      "gs": count(*[_type == "attempt" && player._ref == ^._id && coalesce(mode, "splitG") == "splitG" && splitVerdict.split == true]),
+      "harps": count(*[_type == "attempt" && player._ref == ^._id && mode == "dropHarp" && splitVerdict.split == true]),
       "attempts": count(*[_type == "attempt" && player._ref == ^._id && defined(splitVerdict)]),
       "best": math::max(*[_type == "attempt" && player._ref == ^._id && defined(splitVerdict)].splitVerdict.score)
-    }[attempts > 0] | order(splits desc, best desc),
+    }[attempts > 0]{..., "points": gs + harps} | order(points desc, best desc),
     "latest": *[_type == "attempt" && status == "scored"] | order(splitVerdict.judgedAt desc)[0]{
       "playerName": player->name,
+      "mode": coalesce(mode, "splitG"),
       splitVerdict
     }
   }`)
