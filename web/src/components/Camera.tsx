@@ -6,8 +6,13 @@ import type {Detection} from '@/lib/detector'
 type CameraStatus = 'starting' | 'live' | 'error'
 
 const LIVE_DETECTOR = process.env.NEXT_PUBLIC_LIVE_DETECTOR === '1'
-const STABLE_FRAMES_TO_CAPTURE = 16 // ~2s at ~8fps
-const LINE_TOLERANCE_PX = 10
+// The full-pint proof just needs a clear look at the glass; the split shot
+// needs real aim. Tolerances scale with the G's on-screen size so distance
+// from the camera doesn't change the difficulty.
+const CAPTURE_TUNING = {
+  full: {frames: 6, tolerance: (boxH: number) => Math.max(14, boxH * 0.45)},
+  split: {frames: 10, tolerance: (boxH: number) => Math.max(10, boxH * 0.2)},
+} as const
 
 // Live viewfinder for the bar-top iPad. Uses getUserMedia (requires HTTPS or
 // localhost); falls back to a native file input if the camera is unavailable.
@@ -152,20 +157,23 @@ export function Camera({
             // above the logo, outside the line-finder's band).
             const signal =
               phase === 'split' ? (det?.lineY ?? null) : det ? det.box.y + det.box.h / 2 : null
+            const tuning = CAPTURE_TUNING[phase]
             const s = stableRef.current
-            if (signal != null) {
-              const stable = s.last != null && Math.abs(signal - s.last) < LINE_TOLERANCE_PX
-              s.count = stable ? s.count + 1 : 0
+            if (signal != null && det) {
+              const stable =
+                s.last != null && Math.abs(signal - s.last) < tuning.tolerance(det.box.h)
+              // Leaky counter: a jittery frame is a setback, not a reset.
+              s.count = stable ? s.count + 1 : Math.max(0, s.count - 1)
               s.last = signal
-              setHolding(s.count >= STABLE_FRAMES_TO_CAPTURE / 2)
-              if (s.count >= STABLE_FRAMES_TO_CAPTURE && !s.captured) {
+              setHolding(s.count >= 2)
+              if (s.count >= tuning.frames && !s.captured) {
                 s.captured = true
                 capture()
                 return
               }
             } else {
-              s.count = 0
-              s.last = null
+              s.count = Math.max(0, s.count - 2)
+              if (s.count === 0) s.last = null
               setHolding(false)
             }
           } catch (err) {
