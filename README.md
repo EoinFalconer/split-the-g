@@ -1,8 +1,9 @@
 # Split the G 🍺
 
-Wedding-bar game: a kiosk iPad on the bar verifies your full pint of Guinness, you take your
-drink, and Claude judges whether the beer line split the G. Most Gs split by the end of the
-night wins.
+Wedding-bar game: pick your name on the kiosk iPad, choose your challenge (Split the G, or
+the old-school Drop the Harp), hold your glass up after your sip, and Claude judges where
+the beer line landed. Most targets hit by the end of the night wins. The viewfinder tracks
+the G live (in-browser YOLO) and snaps automatically — no buttons, drunk-proof by design.
 
 ## How it works
 
@@ -16,9 +17,9 @@ iPad kiosk (Next.js, web/)
 TV (/leaderboard) polls a GROQ aggregation every 4s
 ```
 
-The two-photo rule is enforced in the data model: an attempt needs an approved `fullPintVerdict`
-(full, unsipped pint) before the split photo counts. The function's GROQ filter only matches
-unjudged photos, so its own patches never re-trigger it.
+The schema and judge still support an optional full-pint verification photo (`fullPint` +
+`fullPintVerdict`), but the kiosk flow skips it — guests register the split directly. The
+function's GROQ filter only matches unjudged photos, so its own patches never re-trigger it.
 
 - **Sanity project:** `ylubxokd` / dataset `production`
 - **Function:** `functions/judge-pint` (blueprint in `sanity.blueprint.ts`)

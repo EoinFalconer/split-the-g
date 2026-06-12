@@ -15,15 +15,7 @@ type Attempt = {
   splitVerdict?: {split: boolean; score: number; banter?: string; reason?: string}
 }
 
-type Phase =
-  | 'pickPlayer'
-  | 'pickMode'
-  | 'captureFull'
-  | 'judgingFull'
-  | 'readyToDrink'
-  | 'captureSplit'
-  | 'judgingSplit'
-  | 'result'
+type Phase = 'pickPlayer' | 'pickMode' | 'captureSplit' | 'judgingSplit' | 'result'
 
 type Mode = 'splitG' | 'dropHarp'
 
@@ -83,16 +75,6 @@ export default function Kiosk() {
         if (res.ok) {
           const data: Attempt = await res.json()
           setAttempt(data)
-          if (data.status === 'readyToDrink') {
-            setNotice(data.fullPintVerdict?.banter ?? null)
-            setPhase('readyToDrink')
-            return
-          }
-          if (data.status === 'retakeFullPint') {
-            setNotice(data.lastRejection ?? 'The judge wants a clearer look at that pint.')
-            setPhase('captureFull')
-            return
-          }
           if (data.status === 'retakeSplit') {
             setNotice(data.lastRejection ?? 'The judge needs to see the G. Try again.')
             setPhase('captureSplit')
@@ -114,28 +96,28 @@ export default function Kiosk() {
   const startAttempt = useCallback(
     async (photo: Blob) => {
       if (!player) return
-      setPhase('judgingFull')
+      setPhase('judgingSplit')
       setNotice(null)
       const form = new FormData()
       form.append('playerId', player._id)
       form.append('mode', mode)
-      form.append('photo', photo, 'full.jpg')
+      form.append('photo', photo, 'split.jpg')
       const res = await fetch('/api/attempts', {method: 'POST', body: form})
       const {_id} = await res.json()
-      setAttempt({_id, status: 'judgingFullPint'})
+      setAttempt({_id, status: 'judgingSplit'})
       pollUntilJudged(_id)
     },
     [player, mode, pollUntilJudged],
   )
 
-  const sendPhoto = useCallback(
-    async (photo: Blob, photoPhase: 'full' | 'split') => {
+  const retakePhoto = useCallback(
+    async (photo: Blob) => {
       if (!attempt) return
-      setPhase(photoPhase === 'full' ? 'judgingFull' : 'judgingSplit')
+      setPhase('judgingSplit')
       setNotice(null)
       const form = new FormData()
-      form.append('photo', photo, `${photoPhase}.jpg`)
-      form.append('phase', photoPhase)
+      form.append('photo', photo, 'split.jpg')
+      form.append('phase', 'split')
       await fetch(`/api/attempts/${attempt._id}/photo`, {method: 'POST', body: form})
       pollUntilJudged(attempt._id)
     },
@@ -223,7 +205,7 @@ export default function Kiosk() {
                 key={m}
                 onClick={() => {
                   setMode(m)
-                  setPhase('captureFull')
+                  setPhase('captureSplit')
                 }}
                 className="flex flex-col items-center gap-1 rounded-3xl border border-gold/50 bg-stout-2/60 px-8 py-6 transition active:bg-gold/20"
               >
@@ -235,20 +217,6 @@ export default function Kiosk() {
         </section>
       )}
 
-      {phase === 'captureFull' && player && (
-        <Camera
-          label={`${player.name} — hold your full pint up to the camera`}
-          phase="full"
-          mode={mode}
-          onCapture={(photo) =>
-            attempt ? sendPhoto(photo, 'full') : startAttempt(photo)
-          }
-        />
-      )}
-
-      {phase === 'judgingFull' && (
-        <PourLoader message="The judge is inspecting your pint…" />
-      )}
       {phase === 'judgingSplit' && (
         <PourLoader
           message={
@@ -259,24 +227,14 @@ export default function Kiosk() {
         />
       )}
 
-      {phase === 'readyToDrink' && player && (
-        <section className="flex flex-col items-center gap-8 py-4">
-          <p className="shimmer text-5xl font-bold sm:text-6xl">Pint verified</p>
-          <p className="max-w-lg text-2xl leading-relaxed text-cream-dim sm:text-3xl">
-            {player.name}, one drink. {MODES[mode].aim}
-          </p>
-          <button onClick={() => setPhase('captureSplit')} className={goldButton}>
-            I&apos;ve had my sip — judge me
-          </button>
-        </section>
-      )}
-
       {phase === 'captureSplit' && player && (
         <Camera
-          label={`${player.name} — show the judge the ${mode === 'dropHarp' ? 'harp' : 'G'}`}
+          label={`${player.name} — take your sip, then show the judge the ${
+            mode === 'dropHarp' ? 'harp' : 'G'
+          }`}
           phase="split"
           mode={mode}
-          onCapture={(photo) => sendPhoto(photo, 'split')}
+          onCapture={(photo) => (attempt ? retakePhoto(photo) : startAttempt(photo))}
         />
       )}
 

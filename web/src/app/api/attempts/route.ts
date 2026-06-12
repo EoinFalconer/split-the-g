@@ -12,16 +12,17 @@ export async function POST(req: Request) {
 
   const buffer = Buffer.from(await photo.arrayBuffer())
   const asset = await sanity.assets.upload('image', buffer, {
-    filename: `full-pint-${Date.now()}.jpg`,
+    filename: `split-${Date.now()}.jpg`,
     contentType: photo.type || 'image/jpeg',
   })
 
+  // Drunk-proof flow: the attempt starts straight at the split photo.
   const attempt = await sanity.create({
     _type: 'attempt',
     player: {_type: 'reference', _ref: playerId},
     mode,
-    status: 'judgingFullPint',
-    fullPint: {
+    status: 'judgingSplit',
+    splitPint: {
       _type: 'image',
       asset: {_type: 'reference', _ref: asset._id},
     },
