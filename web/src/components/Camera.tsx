@@ -58,7 +58,7 @@ export function Camera({
     let geometry: CaptureGeometry | null = null
     if (phase === 'split' && lastDetRef.current) {
       const {toGeometry} = await import('@/lib/detector')
-      geometry = toGeometry(lastDetRef.current)
+      geometry = toGeometry(lastDetRef.current, video.videoWidth, video.videoHeight)
     }
     canvas.toBlob(
       (blob) => {

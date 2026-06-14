@@ -19,9 +19,65 @@ type Latest = {
   splitVerdict: {split: boolean; score: number; banter?: string}
 } | null
 
+type Geometry = {
+  boxX?: number
+  boxY?: number
+  boxW?: number
+  boxH?: number
+  lineYNorm?: number
+}
+
+type Recent = {
+  _id: string
+  playerName: string
+  mode: string
+  img: string
+  split: boolean
+  score: number | null
+  localGeometry: Geometry | null
+}
+
+const pct = (n: number) => `${(n * 100).toFixed(2)}%`
+
+function PintCard({a}: {a: Recent}) {
+  const g = a.localGeometry
+  const hasBox =
+    g != null && g.boxX != null && g.boxY != null && g.boxW != null && g.boxH != null
+  return (
+    <figure className="mb-3 inline-block w-full break-inside-avoid overflow-hidden rounded-2xl border border-gold/25">
+      <div className="relative">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={`${a.img}?w=500&auto=format`} alt="" className="block h-auto w-full" />
+        {hasBox && (
+          <div className="pointer-events-none absolute inset-0">
+            <div
+              className="absolute rounded-sm border-2 border-gold-bright"
+              style={{left: pct(g!.boxX!), top: pct(g!.boxY!), width: pct(g!.boxW!), height: pct(g!.boxH!)}}
+            />
+            {g!.lineYNorm != null && (
+              <div
+                className={`absolute left-0 right-0 ${a.split ? 'bg-[#7ddf8a]' : 'bg-cream'}`}
+                style={{top: pct(g!.lineYNorm), height: '2px'}}
+              />
+            )}
+          </div>
+        )}
+        <figcaption className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-stout via-stout/70 to-transparent px-3 pb-2 pt-6 text-sm">
+          <span className="font-bold text-cream">{a.playerName}</span>
+          <span className={`tabular-nums ${a.split ? 'text-gold-bright' : 'text-cream/50'}`}>
+            {a.split ? (a.mode === 'dropHarp' ? 'harp' : 'split') : 'miss'}
+            {a.score != null && ` · ${a.score.toFixed(2)}`}
+          </span>
+        </figcaption>
+      </div>
+    </figure>
+  )
+}
+
 export default function Leaderboard() {
   const [players, setPlayers] = useState<Row[]>([])
   const [latest, setLatest] = useState<Latest>(null)
+  const [recent, setRecent] = useState<Recent[]>([])
 
   useEffect(() => {
     let active = true
@@ -32,6 +88,7 @@ export default function Leaderboard() {
           const data = await res.json()
           setPlayers(data.players ?? [])
           setLatest(data.latest ?? null)
+          setRecent(data.recent ?? [])
         }
       } catch {
         // keep the last good board on screen
@@ -112,6 +169,20 @@ export default function Leaderboard() {
           )}
         </tbody>
       </table>
+
+      {recent.length > 0 && (
+        <section className="flex w-full flex-col items-center gap-6">
+          <div className="flex flex-col items-center gap-2">
+            <h2 className="text-3xl italic text-cream-dim">The wall of pints</h2>
+            <div className="rule w-40" />
+          </div>
+          <div className="w-full columns-2 gap-3 sm:columns-3 lg:columns-4 xl:columns-5">
+            {recent.map((a) => (
+              <PintCard key={a._id} a={a} />
+            ))}
+          </div>
+        </section>
+      )}
 
       <footer className="mt-auto flex flex-col items-center gap-3 pt-6">
         <div className="rule w-56" />

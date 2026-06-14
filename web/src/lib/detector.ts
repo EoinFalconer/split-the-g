@@ -17,24 +17,44 @@ export type Detection = {
   hit: boolean
 }
 
-// The deterministic geometry, normalised, sent with the capture so the backend
-// can rule on the split without re-guessing it from the photo. Coordinates are
-// normalised to the G's own height so they're resolution-independent.
+// The deterministic geometry sent with the capture. `lineInG` (normalised to
+// the G's own height) drives the verdict; the box rect + line (normalised to
+// the image, 0..1) let the leaderboard redraw the overlay on the saved photo.
 export type CaptureGeometry = {
   split: boolean
   score: number
   // line position relative to the G box: 0 = top of G, 1 = bottom of G
   lineInG: number
   conf: number
+  // normalised to the captured image, for redrawing the overlay
+  boxX?: number
+  boxY?: number
+  boxW?: number
+  boxH?: number
+  lineYNorm?: number
 }
 
-export function toGeometry(det: Detection | null): CaptureGeometry | null {
+export function toGeometry(
+  det: Detection | null,
+  imgW: number,
+  imgH: number,
+): CaptureGeometry | null {
   if (!det || det.lineY == null || det.score == null || det.box.h <= 0) return null
+  const r = (n: number) => Math.round(n * 10000) / 10000
   return {
     split: det.hit,
     score: det.score,
     lineInG: Math.round(((det.lineY - det.box.y) / det.box.h) * 1000) / 1000,
     conf: Math.round(det.box.conf * 1000) / 1000,
+    ...(imgW > 0 && imgH > 0
+      ? {
+          boxX: r(det.box.x / imgW),
+          boxY: r(det.box.y / imgH),
+          boxW: r(det.box.w / imgW),
+          boxH: r(det.box.h / imgH),
+          lineYNorm: r(det.lineY / imgH),
+        }
+      : {}),
   }
 }
 

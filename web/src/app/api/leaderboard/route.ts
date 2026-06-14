@@ -17,7 +17,17 @@ export async function GET() {
       "playerName": player->name,
       "mode": coalesce(mode, "splitG"),
       splitVerdict
-    }
+    },
+    "recent": *[_type == "attempt" && status == "scored" && defined(splitPint.asset)]
+      | order(splitVerdict.judgedAt desc)[0...18]{
+        _id,
+        "playerName": player->name,
+        "mode": coalesce(mode, "splitG"),
+        "img": splitPint.asset->url,
+        "split": splitVerdict.split,
+        "score": splitVerdict.score,
+        localGeometry{boxX, boxY, boxW, boxH, lineYNorm}
+      }
   }`)
   return NextResponse.json(data)
 }
