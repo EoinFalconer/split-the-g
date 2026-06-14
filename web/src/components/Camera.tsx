@@ -1,7 +1,7 @@
 'use client'
 
 import {useCallback, useEffect, useRef, useState} from 'react'
-import type {Detection} from '@/lib/detector'
+import type {CaptureGeometry, Detection} from '@/lib/detector'
 
 type CameraStatus = 'starting' | 'live' | 'error'
 
@@ -26,7 +26,7 @@ export function Camera({
   phase,
 }: {
   label: string
-  onCapture: (photo: Blob) => void
+  onCapture: (photo: Blob, geometry: CaptureGeometry | null) => void
   mode?: 'splitG' | 'dropHarp'
   // 'full': auto-capture when the G logo is held steady (no line/score needed).
   // 'split': auto-capture when the beer line is held steady; shows live score.
@@ -36,6 +36,7 @@ export function Camera({
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const stableRef = useRef({count: 0, last: null as number | null, captured: false})
+  const lastDetRef = useRef<Detection | null>(null)
   const [status, setStatus] = useState<CameraStatus>('starting')
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
   // Kiosk default: the player faces the screen, so use the front camera.
@@ -45,21 +46,28 @@ export function Camera({
   // null = loading/not applicable, true = auto-capture armed, false = model failed
   const [detectorReady, setDetectorReady] = useState<boolean | null>(null)
 
-  const capture = useCallback(() => {
+  const capture = useCallback(async () => {
     const video = videoRef.current
     if (!video || !video.videoWidth) return
     const canvas = document.createElement('canvas')
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
     canvas.getContext('2d')!.drawImage(video, 0, 0)
+    // Geometry is only meaningful on the split shot; serialise the detection
+    // that's on screen right now so the verdict matches what the player saw.
+    let geometry: CaptureGeometry | null = null
+    if (phase === 'split' && lastDetRef.current) {
+      const {toGeometry} = await import('@/lib/detector')
+      geometry = toGeometry(lastDetRef.current)
+    }
     canvas.toBlob(
       (blob) => {
-        if (blob) onCapture(blob)
+        if (blob) onCapture(blob, geometry)
       },
       'image/jpeg',
       0.85,
     )
-  }, [onCapture])
+  }, [onCapture, phase])
 
   useEffect(() => {
     let cancelled = false
@@ -105,6 +113,7 @@ export function Camera({
   useEffect(() => {
     if (!LIVE_DETECTOR || !phase || status !== 'live') return
     let stopped = false
+    let zonePixels: typeof import('@/lib/detector').zonePixels | null = null
     stableRef.current = {count: 0, last: null, captured: false}
 
     const draw = (det: Detection | null) => {
@@ -119,15 +128,25 @@ export function Camera({
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       if (!det) return
       const {box, lineY} = det
+      const left = Math.max(0, box.x - box.w)
+      const right = Math.min(canvas.width, box.x + box.w * 2)
       ctx.strokeStyle = '#e8cf8d'
       ctx.lineWidth = Math.max(3, canvas.width / 200)
       ctx.strokeRect(box.x, box.y, box.w, box.h)
-      if (phase === 'split' && lineY != null) {
-        ctx.strokeStyle = det.hit ? '#7ddf8a' : '#f4ecdb'
-        ctx.beginPath()
-        ctx.moveTo(Math.max(0, box.x - box.w), lineY)
-        ctx.lineTo(Math.min(canvas.width, box.x + box.w * 2), lineY)
-        ctx.stroke()
+      if (phase === 'split') {
+        // Faint band showing the target zone you're aiming the line into.
+        if (zonePixels) {
+          const {top, bottom} = zonePixels(box, mode)
+          ctx.fillStyle = 'rgba(125, 223, 138, 0.16)'
+          ctx.fillRect(left, top, right - left, bottom - top)
+        }
+        if (lineY != null) {
+          ctx.strokeStyle = det.hit ? '#7ddf8a' : '#f4ecdb'
+          ctx.beginPath()
+          ctx.moveTo(left, lineY)
+          ctx.lineTo(right, lineY)
+          ctx.stroke()
+        }
       }
     }
 
@@ -137,6 +156,7 @@ export function Camera({
         const mod = await import('@/lib/detector')
         await mod.loadDetector()
         detect = mod.detect
+        zonePixels = mod.zonePixels
       } catch (err) {
         console.error('Live detector unavailable, falling back to manual:', err)
         setDetectorReady(false)
@@ -150,6 +170,7 @@ export function Camera({
           try {
             const det = await detect(video, mode)
             if (stopped) return
+            lastDetRef.current = det
             draw(det)
             setLiveScore(phase === 'split' ? (det?.score ?? null) : null)
             // Stability signal: the beer line for split shots, the G box
@@ -204,7 +225,7 @@ export function Camera({
         className="text-base"
         onChange={(e) => {
           const file = e.target.files?.[0]
-          if (file) onCapture(file)
+          if (file) onCapture(file, null)
         }}
       />
     </label>

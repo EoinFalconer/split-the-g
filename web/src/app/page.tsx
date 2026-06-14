@@ -4,6 +4,7 @@ import {useCallback, useEffect, useRef, useState} from 'react'
 import Link from 'next/link'
 import {Camera} from '@/components/Camera'
 import {Brand, PourLoader} from '@/components/Brand'
+import type {CaptureGeometry} from '@/lib/detector'
 
 type Player = {_id: string; name: string}
 
@@ -94,7 +95,7 @@ export default function Kiosk() {
   }, [])
 
   const startAttempt = useCallback(
-    async (photo: Blob) => {
+    async (photo: Blob, geometry: CaptureGeometry | null) => {
       if (!player) return
       setPhase('judgingSplit')
       setNotice(null)
@@ -102,6 +103,7 @@ export default function Kiosk() {
       form.append('playerId', player._id)
       form.append('mode', mode)
       form.append('photo', photo, 'split.jpg')
+      if (geometry) form.append('geometry', JSON.stringify(geometry))
       const res = await fetch('/api/attempts', {method: 'POST', body: form})
       const {_id} = await res.json()
       setAttempt({_id, status: 'judgingSplit'})
@@ -111,13 +113,14 @@ export default function Kiosk() {
   )
 
   const retakePhoto = useCallback(
-    async (photo: Blob) => {
+    async (photo: Blob, geometry: CaptureGeometry | null) => {
       if (!attempt) return
       setPhase('judgingSplit')
       setNotice(null)
       const form = new FormData()
       form.append('photo', photo, 'split.jpg')
       form.append('phase', 'split')
+      if (geometry) form.append('geometry', JSON.stringify(geometry))
       await fetch(`/api/attempts/${attempt._id}/photo`, {method: 'POST', body: form})
       pollUntilJudged(attempt._id)
     },
@@ -234,7 +237,9 @@ export default function Kiosk() {
           }`}
           phase="split"
           mode={mode}
-          onCapture={(photo) => (attempt ? retakePhoto(photo) : startAttempt(photo))}
+          onCapture={(photo, geometry) =>
+            attempt ? retakePhoto(photo, geometry) : startAttempt(photo, geometry)
+          }
         />
       )}
 

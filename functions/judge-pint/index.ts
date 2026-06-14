@@ -10,7 +10,12 @@ interface AttemptEvent {
   hasFullVerdict: boolean
   hasSplitVerdict: boolean
   playerName?: string
+  geometry?: {split?: boolean; score?: number; lineInG?: number; conf?: number} | null
 }
+
+// Below this detection confidence we don't trust the geometry and fall back to
+// letting the LLM judge the whole thing.
+const GEOMETRY_CONF_MIN = 0.5
 
 const MODEL = 'claude-haiku-4-5'
 
@@ -63,6 +68,27 @@ const SPLIT_SCHEMA: Record<string, unknown> = {
     },
   },
   required: ['validPhoto', 'split', 'score', 'reason', 'banter'],
+  additionalProperties: false,
+}
+
+// Used when a confident geometric measurement already decided the split: the
+// LLM only confirms the photo is genuine and writes banter to match.
+const VALIDATE_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    validPhoto: {
+      type: 'boolean',
+      description:
+        'True if this is a genuine, in-person photo of a real Guinness glass on a bar — NOT a screenshot, a photo of a phone or computer screen, or a picture of another picture',
+    },
+    reason: {type: 'string', description: 'One-sentence factual justification'},
+    banter: {
+      type: 'string',
+      description:
+        'One short line of warm Irish-pub-style commentary addressed to the player about their attempt, suitable for a wedding bar screen',
+    },
+  },
+  required: ['validPhoto', 'reason', 'banter'],
   additionalProperties: false,
 }
 
@@ -153,6 +179,64 @@ no sip visibly taken. A partially drunk pint, a different beer, or an empty/abse
   }
 
   if (splitPintUrl && !hasSplitVerdict) {
+    const geo = event.data.geometry
+    const trustGeometry =
+      geo != null &&
+      typeof geo.score === 'number' &&
+      typeof geo.conf === 'number' &&
+      geo.conf >= GEOMETRY_CONF_MIN
+
+    // Authoritative path: the live detector measured where the line landed
+    // relative to the G. The line genuinely passing through the G is what makes
+    // a split — so we trust that measurement and use the LLM only to catch fake
+    // photos and to write the banter. This is what the player saw on screen.
+    if (trustGeometry) {
+      const score = Math.max(0, Math.min(5, Number(geo!.score) || 0))
+      const split = Boolean(geo!.split)
+      const outcome = split
+        ? `they HIT it — the line landed inside the target, scoring ${score.toFixed(2)} out of 5`
+        : `they MISSED — the line did not land in the target (a ${score.toFixed(2)} out of 5)`
+      const verdict = await judgeImage(
+        splitPintUrl,
+        `${player} is playing "${challenge.title}". A precise detector has already measured the
+result: ${outcome}. Do NOT re-judge whether they hit the target — trust the measurement.
+Your only jobs: (1) confirm this is a genuine in-person photo of a real Guinness glass, not a
+screenshot or a photo of a screen; (2) write one line of banter that matches the measured
+result — celebrate a clean hit, commiserate a miss, tease a near-thing.`,
+        VALIDATE_SCHEMA,
+      )
+
+      if (!verdict.validPhoto) {
+        await client
+          .patch(_id)
+          .unset(['splitPint', 'localGeometry'])
+          .set({status: 'retakeSplit', lastRejection: verdict.reason})
+          .commit()
+        console.log(`Split photo rejected for ${player}: ${verdict.reason}`)
+        return
+      }
+
+      await client
+        .patch(_id)
+        .set({
+          splitVerdict: {
+            split,
+            score: Math.round(score * 100) / 100,
+            source: 'geometry',
+            reason: verdict.reason,
+            banter: verdict.banter,
+            judgedAt,
+          },
+          status: 'scored',
+        })
+        .unset(['lastRejection'])
+        .commit()
+      console.log(`Split judged by geometry for ${player}: split=${split} score=${score}`)
+      return
+    }
+
+    // Fallback: no confident geometry (manual snap, model failed to load, or a
+    // shaky detection) — let the LLM judge the whole thing as before.
     const verdict = await judgeImage(
       splitPintUrl,
       `${player} has taken their first drink, playing "${challenge.title}": ${challenge.target}
@@ -164,7 +248,7 @@ Be fair but strict.`,
     if (!verdict.validPhoto) {
       await client
         .patch(_id)
-        .unset(['splitPint'])
+        .unset(['splitPint', 'localGeometry'])
         .set({status: 'retakeSplit', lastRejection: verdict.reason})
         .commit()
       console.log(`Split photo unreadable for ${player}: ${verdict.reason}`)
@@ -178,6 +262,7 @@ Be fair but strict.`,
         splitVerdict: {
           split: Boolean(verdict.split),
           score: Math.round(score * 100) / 100,
+          source: 'llm',
           reason: verdict.reason,
           banter: verdict.banter,
           judgedAt,
@@ -186,6 +271,6 @@ Be fair but strict.`,
       })
       .unset(['lastRejection'])
       .commit()
-    console.log(`Split judged for ${player}: split=${verdict.split} score=${score}`)
+    console.log(`Split judged by LLM for ${player}: split=${verdict.split} score=${score}`)
   }
 })

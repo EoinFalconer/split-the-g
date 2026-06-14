@@ -17,6 +17,27 @@ export type Detection = {
   hit: boolean
 }
 
+// The deterministic geometry, normalised, sent with the capture so the backend
+// can rule on the split without re-guessing it from the photo. Coordinates are
+// normalised to the G's own height so they're resolution-independent.
+export type CaptureGeometry = {
+  split: boolean
+  score: number
+  // line position relative to the G box: 0 = top of G, 1 = bottom of G
+  lineInG: number
+  conf: number
+}
+
+export function toGeometry(det: Detection | null): CaptureGeometry | null {
+  if (!det || det.lineY == null || det.score == null || det.box.h <= 0) return null
+  return {
+    split: det.hit,
+    score: det.score,
+    lineInG: Math.round(((det.lineY - det.box.y) / det.box.h) * 1000) / 1000,
+    conf: Math.round(det.box.conf * 1000) / 1000,
+  }
+}
+
 let sessionPromise: Promise<ort.InferenceSession> | null = null
 
 export function loadDetector(): Promise<ort.InferenceSession> {
@@ -113,17 +134,38 @@ function findBeerLine(video: HTMLVideoElement, box: GBox): number | null {
   return bandY + (bestRow / outH) * bandH
 }
 
-// Geometric score: distance of the line from the target-zone centre, in units
-// of half the zone height. splitG targets the G box; dropHarp targets the gap
-// just above the wordmark (heuristic: 0.4–1.2 G-heights above the box).
+// Target zones, expressed relative to the detected G box (whose top edge is the
+// top of the GUINNESS lettering). lineInG = (lineY - box.y) / box.h, so 0 = top
+// of the G, 1 = bottom of the G, negative = above the lettering toward the harp.
+//
+//  • splitG   — the line must pass through the G itself: lineInG in [0, 1].
+//  • dropHarp — the old-school target is the gap between the top of the wordmark
+//    and the harp. We only detect the G, not the harp, so the zone is a heuristic
+//    relative to the G's height: the top ~20% of the G up into the gap above it,
+//    i.e. lineInG in [-0.9, 0.2]. (A pixel-exact harp gap would need a second
+//    detector class for the harp — a future training pass.)
+export const ZONES = {
+  splitG: {center: 0.5, half: 0.5},
+  dropHarp: {center: -0.35, half: 0.55},
+} as const
+
+// Target band in source-video pixels, for drawing the aim guide on the overlay.
+export function zonePixels(box: GBox, mode: 'splitG' | 'dropHarp') {
+  const z = ZONES[mode]
+  return {
+    top: box.y + (z.center - z.half) * box.h,
+    bottom: box.y + (z.center + z.half) * box.h,
+  }
+}
+
 export function scoreLine(
   box: GBox,
   lineY: number,
   mode: 'splitG' | 'dropHarp',
 ): {score: number; hit: boolean} {
-  const zoneCenter = mode === 'splitG' ? box.y + box.h / 2 : box.y - box.h * 0.8
-  const zoneHalf = mode === 'splitG' ? box.h / 2 : box.h * 0.4
-  const d = Math.abs(lineY - zoneCenter) / zoneHalf
+  const zone = ZONES[mode]
+  const lineInG = (lineY - box.y) / box.h
+  const d = Math.abs(lineInG - zone.center) / zone.half
   const hit = d <= 1
   const score = hit ? 5 - 1.25 * d : Math.max(0, 3.75 - 2 * (d - 1))
   return {score: Math.round(score * 100) / 100, hit}

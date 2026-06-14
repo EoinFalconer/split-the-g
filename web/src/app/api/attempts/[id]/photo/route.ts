@@ -1,5 +1,6 @@
 import {NextResponse} from 'next/server'
 import {sanity} from '@/lib/sanity'
+import {parseGeometry} from '@/lib/geometry'
 
 // Attach a photo to an existing attempt: phase "full" (retakes) or "split".
 export async function POST(
@@ -10,6 +11,7 @@ export async function POST(
   const form = await req.formData()
   const photo = form.get('photo')
   const phase = form.get('phase')
+  const geometry = parseGeometry(form.get('geometry'))
   if (!(photo instanceof File) || (phase !== 'full' && phase !== 'split')) {
     return NextResponse.json(
       {error: 'photo and phase ("full" | "split") are required'},
@@ -36,7 +38,12 @@ export async function POST(
   } else {
     await sanity
       .patch(id)
-      .set({splitPint: imageField, status: 'judgingSplit'})
+      .set({
+        splitPint: imageField,
+        status: 'judgingSplit',
+        ...(geometry && {localGeometry: {_type: 'localGeometry', ...geometry}}),
+      })
+      .unset(geometry ? [] : ['localGeometry'])
       .commit()
   }
 
