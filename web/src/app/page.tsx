@@ -73,17 +73,28 @@ export default function Kiosk() {
     }
   }, [])
 
-  const choosePlayer = useCallback((p: Player) => {
-    window.localStorage.setItem(PLAYER_KEY, JSON.stringify(p))
-    setRemembered(p)
-    setPlayer(p)
-    setPhase('pickMode')
+  // The game is one page with no routes; give the back button/swipe meaning by
+  // pushing a history entry on every user-driven forward step. popstate then
+  // walks back one screen instead of dumping the guest out of the site.
+  const navigate = useCallback((next: Phase) => {
+    window.history.pushState({stg: next}, '')
+    setPhase(next)
   }, [])
+
+  const choosePlayer = useCallback(
+    (p: Player) => {
+      window.localStorage.setItem(PLAYER_KEY, JSON.stringify(p))
+      setRemembered(p)
+      setPlayer(p)
+      navigate('pickMode')
+    },
+    [navigate],
+  )
 
   const dismissIntro = useCallback(() => {
     window.localStorage.setItem(INTRO_SEEN_KEY, '1')
-    setPhase('pickPlayer')
-  }, [])
+    navigate('pickPlayer')
+  }, [navigate])
 
   const loadPlayers = useCallback(async () => {
     const res = await fetch('/api/players')
@@ -167,6 +178,32 @@ export default function Kiosk() {
     setNotice(null)
     loadPlayers()
   }, [loadPlayers])
+
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
+  useEffect(() => {
+    const onPop = () => {
+      switch (phaseRef.current) {
+        case 'pickMode':
+          setPhase('pickPlayer')
+          break
+        case 'captureSplit':
+          setAttempt(null)
+          setNotice(null)
+          setPhase('pickMode')
+          break
+        case 'judgingSplit':
+        case 'result':
+          reset()
+          break
+        default:
+          // welcome / pickPlayer — nothing above them to step back to
+          break
+      }
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [reset])
 
   const addPlayer = useCallback(async () => {
     const name = newName.trim()
@@ -280,7 +317,7 @@ export default function Kiosk() {
               the leaderboard
             </Link>
             <button
-              onClick={() => setPhase('welcome')}
+              onClick={() => navigate('welcome')}
               className="flabel underline decoration-ink-faint underline-offset-8"
             >
               how to play
@@ -292,13 +329,19 @@ export default function Kiosk() {
       {phase === 'pickMode' && player && (
         <section className="flex w-full max-w-xl flex-col items-center gap-8">
           <p className="names text-4xl text-ink-mid">{player.name}, choose your challenge</p>
+          <button
+            onClick={() => window.history.back()}
+            className="flabel underline decoration-ink-faint underline-offset-8"
+          >
+            &larr; not {player.name}? back to the names
+          </button>
           <div className="flex w-full flex-col gap-4">
             {(Object.keys(MODES) as Mode[]).map((m) => (
               <button
                 key={m}
                 onClick={() => {
                   setMode(m)
-                  setPhase('captureSplit')
+                  navigate('captureSplit')
                 }}
                 className="optcard"
               >
@@ -333,6 +376,14 @@ export default function Kiosk() {
             attempt ? retakePhoto(photo, geometry) : startAttempt(photo, geometry)
           }
         />
+      )}
+      {phase === 'captureSplit' && player && (
+        <button
+          onClick={() => (attempt ? reset() : window.history.back())}
+          className="flabel underline decoration-ink-faint underline-offset-8"
+        >
+          {attempt ? 'start over with a fresh pint' : '\u2190 change challenge'}
+        </button>
       )}
 
       {phase === 'result' && attempt?.splitVerdict && (
