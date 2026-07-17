@@ -3,7 +3,7 @@
 import {useCallback, useEffect, useRef, useState} from 'react'
 import Link from 'next/link'
 import {Camera} from '@/components/Camera'
-import {Brand, PourLoader} from '@/components/Brand'
+import {Brand, PintsSign, PourLoader} from '@/components/Brand'
 import type {CaptureGeometry} from '@/lib/detector'
 
 type Player = {_id: string; name: string}
@@ -16,7 +16,7 @@ type Attempt = {
   splitVerdict?: {split: boolean; score: number; banter?: string; reason?: string}
 }
 
-type Phase = 'pickPlayer' | 'pickMode' | 'captureSplit' | 'judgingSplit' | 'result'
+type Phase = 'welcome' | 'pickPlayer' | 'pickMode' | 'captureSplit' | 'judgingSplit' | 'result'
 
 type Mode = 'splitG' | 'dropHarp'
 
@@ -24,7 +24,7 @@ const MODES: Record<Mode, {title: React.ReactNode; tagline: string; aim: string;
   splitG: {
     title: (
       <>
-        Split the <span className="split-g italic text-gold-bright">G</span>
+        Split the <span className="split-g">G</span>
       </>
     ),
     tagline: 'land the line through the heart of the G',
@@ -39,8 +39,15 @@ const MODES: Record<Mode, {title: React.ReactNode; tagline: string; aim: string;
   },
 }
 
-const goldButton =
-  'rounded-full bg-gradient-to-b from-gold-bright to-gold px-10 py-5 text-2xl font-bold tracking-wide text-stout shadow-[0_8px_30px_rgba(200,164,77,0.25)] transition active:scale-95'
+const INTRO_SEEN_KEY = 'stg-intro-seen'
+
+const HOW_TO_STEPS: {title: string; body: string}[] = [
+  {title: 'Get a pint', body: 'Collect a fresh pint of Guinness from the bar. One attempt per pint.'},
+  {title: 'Pick your name', body: 'Find yourself on the list (or join in) so your score lands on the board.'},
+  {title: 'Take your sip', body: 'One honest gulp — you’re aiming to leave the beer line right in the middle of the G on the glass.'},
+  {title: 'Show the camera', body: 'Hold the glass up with the G facing the camera and keep it steady — it snaps by itself. And keep it level: the judge disqualifies tilted pints.'},
+  {title: 'Face the judge', body: 'Claude rules on every pint. A clean split is a point on the board — most points by the end of the night takes the championship.'},
+]
 
 export default function Kiosk() {
   const [phase, setPhase] = useState<Phase>('pickPlayer')
@@ -51,6 +58,16 @@ export default function Kiosk() {
   const [attempt, setAttempt] = useState<Attempt | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // First-time visitors arriving via the table link get the rules first.
+  useEffect(() => {
+    if (!window.localStorage.getItem(INTRO_SEEN_KEY)) setPhase('welcome')
+  }, [])
+
+  const dismissIntro = useCallback(() => {
+    window.localStorage.setItem(INTRO_SEEN_KEY, '1')
+    setPhase('pickPlayer')
+  }, [])
 
   const loadPlayers = useCallback(async () => {
     const res = await fetch('/api/players')
@@ -151,17 +168,46 @@ export default function Kiosk() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col items-center gap-10 px-6 py-10 text-center">
-      <Brand compact={phase !== 'pickPlayer'} />
+      <Brand compact={phase !== 'pickPlayer' && phase !== 'welcome'} />
 
       {notice && phase !== 'result' && (
-        <p className="max-w-xl text-xl italic leading-relaxed text-gold-bright sm:text-2xl">
+        <p className="max-w-xl text-xl italic leading-relaxed text-coral sm:text-2xl">
           &ldquo;{notice}&rdquo;
         </p>
       )}
 
+      {phase === 'welcome' && (
+        <section className="flex w-full max-w-xl flex-col items-center gap-7">
+          <p className="max-w-md text-lg leading-relaxed text-ink-deep">
+            Welcome to the table game of the night. It&apos;s played with a pint of Guinness, one
+            brave sip, and an incorruptible judge.
+          </p>
+          <div className="flex w-full flex-col gap-3 text-left">
+            {HOW_TO_STEPS.map((step, i) => (
+              <div key={step.title} className="card flex items-start gap-4">
+                <span className="names shrink-0 text-3xl text-coral">{i + 1}</span>
+                <div>
+                  <p className="flabel">{step.title}</p>
+                  <p className="mt-1 text-[15px] leading-relaxed text-ink-deep">{step.body}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button onClick={dismissIntro} className="fbtn">
+            grand, let&apos;s pour
+          </button>
+          <Link
+            href="/leaderboard"
+            className="flabel underline decoration-ink-faint underline-offset-8"
+          >
+            peek at the leaderboard
+          </Link>
+        </section>
+      )}
+
       {phase === 'pickPlayer' && (
         <section className="flex w-full flex-col items-center gap-10">
-          <p className="text-3xl italic text-cream-dim">Who&apos;s up?</p>
+          <p className="names text-4xl text-ink-mid">Who&apos;s up?</p>
           {players.length > 0 && (
             <div className="flex max-w-xl flex-wrap justify-center gap-3">
               {players.map((p) => (
@@ -171,7 +217,7 @@ export default function Kiosk() {
                     setPlayer(p)
                     setPhase('pickMode')
                   }}
-                  className="rounded-full border border-gold/50 bg-stout-2/60 px-7 py-3 text-2xl text-cream transition active:bg-gold active:text-stout"
+                  className="rounded-full border-[1.5px] border-ink-faint bg-white/45 px-6 py-2.5 text-lg font-semibold text-ink-deep transition active:border-ink active:bg-wash"
                 >
                   {p.name}
                 </button>
@@ -184,24 +230,32 @@ export default function Kiosk() {
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addPlayer()}
               placeholder="New challenger…"
-              className="min-w-0 flex-1 rounded-full border border-cream/25 bg-stout-2/60 px-6 py-4 text-2xl italic text-cream outline-none placeholder:text-cream/30 focus:border-gold/70"
+              className="min-w-0 flex-1 rounded-full border-[1.5px] border-ink-faint bg-white/45 px-6 py-3.5 text-lg text-ink-deep outline-none placeholder:text-ink-soft focus:border-ink"
             />
-            <button onClick={addPlayer} className={goldButton}>
+            <button onClick={addPlayer} className="fbtn">
               Join
             </button>
           </div>
-          <Link
-            href="/leaderboard"
-            className="text-lg tracking-widest text-cream-dim underline decoration-gold/40 underline-offset-8"
-          >
-            view the leaderboard
-          </Link>
+          <div className="flex items-center gap-8">
+            <Link
+              href="/leaderboard"
+              className="flabel underline decoration-ink-faint underline-offset-8"
+            >
+              the leaderboard
+            </Link>
+            <button
+              onClick={() => setPhase('welcome')}
+              className="flabel underline decoration-ink-faint underline-offset-8"
+            >
+              how to play
+            </button>
+          </div>
         </section>
       )}
 
       {phase === 'pickMode' && player && (
         <section className="flex w-full max-w-xl flex-col items-center gap-8">
-          <p className="text-3xl italic text-cream-dim">{player.name}, choose your challenge</p>
+          <p className="names text-4xl text-ink-mid">{player.name}, choose your challenge</p>
           <div className="flex w-full flex-col gap-4">
             {(Object.keys(MODES) as Mode[]).map((m) => (
               <button
@@ -210,10 +264,12 @@ export default function Kiosk() {
                   setMode(m)
                   setPhase('captureSplit')
                 }}
-                className="flex flex-col items-center gap-1 rounded-3xl border border-gold/50 bg-stout-2/60 px-8 py-6 transition active:bg-gold/20"
+                className="optcard"
               >
-                <span className="text-4xl font-bold text-cream">{MODES[m].title}</span>
-                <span className="text-lg italic text-cream-dim">{MODES[m].tagline}</span>
+                <span className="names block text-4xl text-ink">{MODES[m].title}</span>
+                <span className="mt-1 block text-[15px] italic text-ink-mid">
+                  {MODES[m].tagline}
+                </span>
               </button>
             ))}
           </div>
@@ -234,7 +290,7 @@ export default function Kiosk() {
         <Camera
           label={`${player.name} — take your sip, then show the judge the ${
             mode === 'dropHarp' ? 'harp' : 'G'
-          }`}
+          }. Keep the glass level!`}
           phase="split"
           mode={mode}
           onCapture={(photo, geometry) =>
@@ -246,30 +302,30 @@ export default function Kiosk() {
       {phase === 'result' && attempt?.splitVerdict && (
         <section className="flex flex-col items-center gap-7 py-4">
           {attempt.splitVerdict.split ? (
-            <p className="shimmer text-7xl font-bold sm:text-8xl">{MODES[mode].win}</p>
+            <p className="names shimmer text-7xl sm:text-8xl">{MODES[mode].win}</p>
           ) : (
-            <p className="text-6xl font-bold text-cream/70 sm:text-7xl">No split</p>
+            <p className="names text-6xl text-ink-soft sm:text-7xl">No split</p>
           )}
-          <p className="text-5xl font-bold tabular-nums text-gold-bright sm:text-6xl">
+          <p className="text-5xl font-bold tabular-nums text-ink sm:text-6xl">
             {attempt.splitVerdict.score.toFixed(2)}
-            <span className="text-3xl text-cream-dim"> / 5.00</span>
+            <span className="text-3xl font-normal text-ink-soft"> / 5.00</span>
           </p>
           {attempt.splitVerdict.split && (
-            <p className="text-2xl tracking-widest text-cream-dim">+1 point on the board</p>
+            <p className="flabel text-coral">+1 point on the board</p>
           )}
           {attempt.splitVerdict.banter && (
-            <p className="max-w-xl text-xl italic leading-relaxed text-gold-bright sm:text-2xl">
+            <p className="max-w-xl text-xl italic leading-relaxed text-coral sm:text-2xl">
               &ldquo;{attempt.splitVerdict.banter}&rdquo;
             </p>
           )}
-          <button onClick={reset} className={`${goldButton} mt-2`}>
+          <button onClick={reset} className="fbtn mt-2">
             Next challenger
           </button>
         </section>
       )}
 
-      <footer className="mt-auto pt-8 text-sm uppercase tracking-[0.4em] text-cream/30">
-        Sláinte &middot; Skål
+      <footer className="mt-auto pt-8">
+        <PintsSign />
       </footer>
     </main>
   )

@@ -39,8 +39,9 @@ export function Camera({
   const lastDetRef = useRef<Detection | null>(null)
   const [status, setStatus] = useState<CameraStatus>('starting')
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
-  // Kiosk default: the player faces the screen, so use the front camera.
-  const [facing, setFacing] = useState<'user' | 'environment'>('user')
+  // Table-link default: guests point their own phone at their pint, so start
+  // with the back camera (the bar-top kiosk can flip to the front one).
+  const [facing, setFacing] = useState<'user' | 'environment'>('environment')
   const [liveScore, setLiveScore] = useState<number | null>(null)
   const [holding, setHolding] = useState(false)
   // null = loading/not applicable, true = auto-capture armed, false = model failed
@@ -130,18 +131,18 @@ export function Camera({
       const {box, lineY} = det
       const left = Math.max(0, box.x - box.w)
       const right = Math.min(canvas.width, box.x + box.w * 2)
-      ctx.strokeStyle = '#e8cf8d'
+      ctx.strokeStyle = '#6a6aae'
       ctx.lineWidth = Math.max(3, canvas.width / 200)
       ctx.strokeRect(box.x, box.y, box.w, box.h)
       if (phase === 'split') {
         // Faint band showing the target zone you're aiming the line into.
         if (zonePixels) {
           const {top, bottom} = zonePixels(box, mode)
-          ctx.fillStyle = 'rgba(125, 223, 138, 0.16)'
+          ctx.fillStyle = 'rgba(224, 106, 69, 0.18)'
           ctx.fillRect(left, top, right - left, bottom - top)
         }
         if (lineY != null) {
-          ctx.strokeStyle = det.hit ? '#7ddf8a' : '#f4ecdb'
+          ctx.strokeStyle = det.hit ? '#e06a45' : '#f6f0e1'
           ctx.beginPath()
           ctx.moveTo(left, lineY)
           ctx.lineTo(right, lineY)
@@ -216,7 +217,7 @@ export function Camera({
   const autoArmed = LIVE_DETECTOR && phase != null && detectorReady === true
 
   const fileFallback = (
-    <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-cream/40 px-6 py-4 text-xl">
+    <label className="card flex cursor-pointer flex-col items-center gap-2 text-lg text-ink-deep">
       Take a photo with the device camera instead
       <input
         type="file"
@@ -234,11 +235,11 @@ export function Camera({
   if (status === 'error') {
     return (
       <div className="flex w-full max-w-md flex-col items-center gap-6 text-center">
-        <p className="text-3xl">{label}</p>
-        <p className="text-xl text-gold">{errorDetail}</p>
+        <p className="text-2xl italic text-ink-mid">{label}</p>
+        <p className="text-lg text-coral">{errorDetail}</p>
         <button
           onClick={() => setFacing(facing === 'user' ? 'environment' : 'user')}
-          className="text-base uppercase tracking-[0.3em] text-cream/40 underline-offset-8 active:underline"
+          className="flabel underline decoration-ink-faint underline-offset-8"
         >
           try the other camera
         </button>
@@ -251,8 +252,8 @@ export function Camera({
 
   return (
     <div className="flex w-full flex-col items-center gap-7">
-      <p className="max-w-lg text-center text-2xl italic text-cream-dim sm:text-3xl">{label}</p>
-      <div className="relative w-full max-w-md rounded-3xl border border-gold/60 p-2 shadow-[0_0_60px_rgba(200,164,77,0.12)]">
+      <p className="max-w-lg text-center text-xl italic text-ink-mid sm:text-2xl">{label}</p>
+      <div className="relative w-full max-w-md rounded-3xl border-[1.5px] border-ink-faint bg-white/45 p-2">
         {/* Mirror the front-camera preview like a mirror; captures stay unmirrored */}
         <video
           ref={videoRef}
@@ -260,7 +261,7 @@ export function Camera({
           playsInline
           muted
           onLoadedData={() => setStatus('live')}
-          className={`aspect-[3/4] w-full rounded-2xl border border-cream/15 object-cover ${mirrored}`}
+          className={`aspect-[3/4] w-full rounded-2xl border border-ink-faint/60 object-cover ${mirrored}`}
         />
         <canvas
           ref={overlayRef}
@@ -268,17 +269,17 @@ export function Camera({
         />
         {status === 'starting' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-2xl">
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-cream/20 border-t-gold" />
-            <p className="px-8 text-center text-xl italic text-cream/80">
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-ink-faint border-t-ink" />
+            <p className="px-8 text-center text-xl italic text-ink-mid">
               Waiting for the camera… if the browser asks for permission, tap Allow.
             </p>
           </div>
         )}
         {(liveScore != null || holding) && (
-          <div className="absolute left-1/2 top-5 -translate-x-1/2 rounded-full bg-stout/80 px-5 py-2 text-2xl font-bold tabular-nums text-gold-bright">
+          <div className="absolute left-1/2 top-5 -translate-x-1/2 rounded-full bg-paper/90 px-5 py-2 text-2xl font-bold tabular-nums text-ink">
             {liveScore != null && liveScore.toFixed(2)}
             {holding && (
-              <span className={`italic text-cream-dim ${liveScore != null ? 'ml-3 text-base' : 'text-xl'}`}>
+              <span className={`italic text-ink-mid ${liveScore != null ? 'ml-3 text-base' : 'text-xl'}`}>
                 hold it…
               </span>
             )}
@@ -286,14 +287,14 @@ export function Camera({
         )}
       </div>
       {autoArmed ? (
-        <p className="text-xl italic text-cream-dim">
-          No button needed — hold the pint steady and it snaps itself.
+        <p className="text-lg italic text-ink-mid">
+          No button needed — hold the pint steady and level, and it snaps itself.
         </p>
       ) : (
         <button
           onClick={capture}
           disabled={status !== 'live'}
-          className="h-24 w-24 rounded-full border-4 border-cream/70 bg-gradient-to-b from-gold-bright to-gold shadow-[0_8px_30px_rgba(200,164,77,0.35)] transition active:scale-90 disabled:opacity-30"
+          className="h-24 w-24 rounded-full border-4 border-paper bg-ink shadow-[0_8px_30px_rgba(65,65,152,0.3)] transition active:scale-90 disabled:opacity-30"
           aria-label="Take photo"
         />
       )}
@@ -301,14 +302,14 @@ export function Camera({
         {autoArmed && (
           <button
             onClick={capture}
-            className="text-base uppercase tracking-[0.3em] text-cream/40 underline-offset-8 active:underline"
+            className="flabel underline decoration-ink-faint underline-offset-8"
           >
             snap manually
           </button>
         )}
         <button
           onClick={() => setFacing(facing === 'user' ? 'environment' : 'user')}
-          className="text-base uppercase tracking-[0.3em] text-cream/40 underline-offset-8 active:underline"
+          className="flabel underline decoration-ink-faint underline-offset-8"
         >
           flip camera
         </button>

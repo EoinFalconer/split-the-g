@@ -51,6 +51,11 @@ const SPLIT_SCHEMA: Record<string, unknown> = {
       description:
         'True if the Guinness-branded glass and its harp/GUINNESS logo with the letter G are clearly visible along with the current beer line',
     },
+    glassLevel: {
+      type: 'boolean',
+      description:
+        'True if the glass is held upright. The beer surface always lies level with gravity, so on an upright glass the beer line runs parallel to the rim and the GUINNESS lettering, square to the glass sides. If the line is clearly slanted relative to the glass itself, the glass was tilted — false. (A tilted camera leans glass and line together; that is NOT a tilt.)',
+    },
     split: {
       type: 'boolean',
       description: 'True if the beer/foam boundary line landed in the target zone for the challenge described in the prompt',
@@ -67,7 +72,7 @@ const SPLIT_SCHEMA: Record<string, unknown> = {
         'One short line of warm Irish-pub-style commentary addressed to the player, suitable for a wedding bar screen',
     },
   },
-  required: ['validPhoto', 'split', 'score', 'reason', 'banter'],
+  required: ['validPhoto', 'glassLevel', 'split', 'score', 'reason', 'banter'],
   additionalProperties: false,
 }
 
@@ -81,6 +86,11 @@ const VALIDATE_SCHEMA: Record<string, unknown> = {
       description:
         'True if this is a genuine, in-person photo of a real Guinness glass on a bar — NOT a screenshot, a photo of a phone or computer screen, or a picture of another picture',
     },
+    glassLevel: {
+      type: 'boolean',
+      description:
+        'True if the glass is held upright. The beer surface always lies level with gravity, so on an upright glass the beer line runs parallel to the rim and the GUINNESS lettering, square to the glass sides. If the line is clearly slanted relative to the glass itself, the glass was tilted to cheat the line into the target — false. (A tilted camera leans glass and line together; that is NOT a tilt.)',
+    },
     reason: {type: 'string', description: 'One-sentence factual justification'},
     banter: {
       type: 'string',
@@ -88,7 +98,7 @@ const VALIDATE_SCHEMA: Record<string, unknown> = {
         'One short line of warm Irish-pub-style commentary addressed to the player about their attempt, suitable for a wedding bar screen',
     },
   },
-  required: ['validPhoto', 'reason', 'banter'],
+  required: ['validPhoto', 'glassLevel', 'reason', 'banter'],
   additionalProperties: false,
 }
 
@@ -200,9 +210,12 @@ no sip visibly taken. A partially drunk pint, a different beer, or an empty/abse
         splitPintUrl,
         `${player} is playing "${challenge.title}". A precise detector has already measured the
 result: ${outcome}. Do NOT re-judge whether they hit the target — trust the measurement.
-Your only jobs: (1) confirm this is a genuine in-person photo of a real Guinness glass, not a
-screenshot or a photo of a screen; (2) write one line of banter that matches the measured
-result — celebrate a clean hit, commiserate a miss, tease a near-thing.`,
+Your jobs: (1) confirm this is a genuine in-person photo of a real Guinness glass, not a
+screenshot or a photo of a screen; (2) check for the tilt cheat — the detector can be fooled
+by a player tilting the glass so the beer line slides into the target, so if the beer line is
+clearly slanted relative to the glass itself (its rim, sides and lettering), the glass was
+tilted; (3) write one line of banter that matches the measured result — celebrate a clean hit,
+commiserate a miss, tease a near-thing.`,
         VALIDATE_SCHEMA,
       )
 
@@ -213,6 +226,20 @@ result — celebrate a clean hit, commiserate a miss, tease a near-thing.`,
           .set({status: 'retakeSplit', lastRejection: verdict.reason})
           .commit()
         console.log(`Split photo rejected for ${player}: ${verdict.reason}`)
+        return
+      }
+
+      if (verdict.glassLevel === false) {
+        await client
+          .patch(_id)
+          .unset(['splitPint', 'localGeometry'])
+          .set({
+            status: 'retakeSplit',
+            lastRejection:
+              'The judge saw that tilt — hold the glass level and show it again.',
+          })
+          .commit()
+        console.log(`Tilted glass rejected for ${player}: ${verdict.reason}`)
         return
       }
 
@@ -241,6 +268,8 @@ result — celebrate a clean hit, commiserate a miss, tease a near-thing.`,
       splitPintUrl,
       `${player} has taken their first drink, playing "${challenge.title}": ${challenge.target}
 Locate the logo, locate the beer line, and judge whether the target was hit and how cleanly.
+Also check for the tilt cheat: if the beer line is clearly slanted relative to the glass
+itself (its rim, sides and lettering), the glass was tilted to slide the line into the target.
 Be fair but strict.`,
       SPLIT_SCHEMA,
     )
@@ -252,6 +281,19 @@ Be fair but strict.`,
         .set({status: 'retakeSplit', lastRejection: verdict.reason})
         .commit()
       console.log(`Split photo unreadable for ${player}: ${verdict.reason}`)
+      return
+    }
+
+    if (verdict.glassLevel === false) {
+      await client
+        .patch(_id)
+        .unset(['splitPint', 'localGeometry'])
+        .set({
+          status: 'retakeSplit',
+          lastRejection: 'The judge saw that tilt — hold the glass level and show it again.',
+        })
+        .commit()
+      console.log(`Tilted glass rejected for ${player}: ${verdict.reason}`)
       return
     }
 
