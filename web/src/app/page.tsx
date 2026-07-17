@@ -40,6 +40,7 @@ const MODES: Record<Mode, {title: React.ReactNode; tagline: string; aim: string;
 }
 
 const INTRO_SEEN_KEY = 'stg-intro-seen'
+const PLAYER_KEY = 'stg-player'
 
 const HOW_TO_STEPS: {title: string; body: string}[] = [
   {title: 'Get a pint', body: 'Collect a fresh pint of Guinness from the bar. One attempt per pint.'},
@@ -55,6 +56,8 @@ export default function Kiosk() {
   const [player, setPlayer] = useState<Player | null>(null)
   const [mode, setMode] = useState<Mode>('splitG')
   const [newName, setNewName] = useState('')
+  // The player this browser played as last time — offered as the default.
+  const [remembered, setRemembered] = useState<Player | null>(null)
   const [attempt, setAttempt] = useState<Attempt | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -62,6 +65,19 @@ export default function Kiosk() {
   // First-time visitors arriving via the table link get the rules first.
   useEffect(() => {
     if (!window.localStorage.getItem(INTRO_SEEN_KEY)) setPhase('welcome')
+    try {
+      const saved = window.localStorage.getItem(PLAYER_KEY)
+      if (saved) setRemembered(JSON.parse(saved))
+    } catch {
+      // corrupt value — ignore and ask for a name
+    }
+  }, [])
+
+  const choosePlayer = useCallback((p: Player) => {
+    window.localStorage.setItem(PLAYER_KEY, JSON.stringify(p))
+    setRemembered(p)
+    setPlayer(p)
+    setPhase('pickMode')
   }, [])
 
   const dismissIntro = useCallback(() => {
@@ -162,12 +178,16 @@ export default function Kiosk() {
     })
     const created: Player = await res.json()
     setNewName('')
-    setPlayer(created)
-    setPhase('pickMode')
-  }, [newName])
+    choosePlayer(created)
+  }, [newName, choosePlayer])
+
+  const query = newName.trim().toLowerCase()
+  const shownPlayers = query
+    ? players.filter((p) => p.name.toLowerCase().includes(query))
+    : players
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col items-center gap-10 px-6 py-10 text-center">
+    <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col items-center gap-8 px-5 py-8 text-center">
       <Brand compact={phase !== 'pickPlayer' && phase !== 'welcome'} />
 
       {notice && phase !== 'result' && (
@@ -206,36 +226,52 @@ export default function Kiosk() {
       )}
 
       {phase === 'pickPlayer' && (
-        <section className="flex w-full flex-col items-center gap-10">
-          <p className="names text-4xl text-ink-mid">Who&apos;s up?</p>
-          {players.length > 0 && (
-            <div className="flex max-w-xl flex-wrap justify-center gap-3">
-              {players.map((p) => (
-                <button
-                  key={p._id}
-                  onClick={() => {
-                    setPlayer(p)
-                    setPhase('pickMode')
-                  }}
-                  className="rounded-full border-[1.5px] border-ink-faint bg-white/45 px-6 py-2.5 text-lg font-semibold text-ink-deep transition active:border-ink active:bg-wash"
-                >
-                  {p.name}
+        <section className="flex w-full flex-col items-center gap-8">
+          {remembered ? (
+            <>
+              <p className="names text-4xl text-ink-mid">Back for another?</p>
+              <button onClick={() => choosePlayer(remembered)} className="fbtn">
+                continue as {remembered.name}
+              </button>
+              <button
+                onClick={() => setRemembered(null)}
+                className="flabel underline decoration-ink-faint underline-offset-8"
+              >
+                not {remembered.name}? pick a name
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="names text-4xl text-ink-mid">Who&apos;s up?</p>
+              <div className="flex w-full max-w-md items-center gap-3">
+                <input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addPlayer()}
+                  placeholder="Find or enter your name…"
+                  className="min-w-0 flex-1 rounded-full border-[1.5px] border-ink-faint bg-white/45 px-6 py-3.5 text-lg text-ink-deep outline-none placeholder:text-ink-soft focus:border-ink"
+                />
+              </div>
+              {shownPlayers.length > 0 && (
+                <div className="flex max-w-xl flex-wrap justify-center gap-3">
+                  {shownPlayers.map((p) => (
+                    <button
+                      key={p._id}
+                      onClick={() => choosePlayer(p)}
+                      className="rounded-full border-[1.5px] border-ink-faint bg-white/45 px-6 py-2.5 text-lg font-semibold text-ink-deep transition active:border-ink active:bg-wash"
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {newName.trim() && (
+                <button onClick={addPlayer} className="fbtn">
+                  join as &ldquo;{newName.trim()}&rdquo;
                 </button>
-              ))}
-            </div>
+              )}
+            </>
           )}
-          <div className="flex w-full max-w-md items-center gap-3">
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addPlayer()}
-              placeholder="New challenger…"
-              className="min-w-0 flex-1 rounded-full border-[1.5px] border-ink-faint bg-white/45 px-6 py-3.5 text-lg text-ink-deep outline-none placeholder:text-ink-soft focus:border-ink"
-            />
-            <button onClick={addPlayer} className="fbtn">
-              Join
-            </button>
-          </div>
           <div className="flex items-center gap-8">
             <Link
               href="/leaderboard"

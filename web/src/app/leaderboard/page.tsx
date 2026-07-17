@@ -104,12 +104,12 @@ export default function Leaderboard() {
   }, [])
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center gap-10 px-10 py-12">
+    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center gap-8 px-5 py-8 sm:gap-10 sm:px-10 sm:py-12">
       <header className="flex flex-col items-center gap-1 text-center">
         <p className="hello">
           sláinte<span className="dot">•</span>skål
         </p>
-        <h1 className="names mt-1 text-7xl sm:text-8xl">
+        <h1 className="names mt-1 text-6xl sm:text-8xl">
           Split the <span className="split-g">G</span>
         </h1>
         <p className="flabel mt-2">the wedding championship</p>
@@ -118,7 +118,7 @@ export default function Leaderboard() {
       </header>
 
       {latest?.splitVerdict?.banter && (
-        <blockquote className="max-w-3xl text-center text-2xl italic leading-relaxed text-coral sm:text-3xl">
+        <blockquote className="max-w-3xl text-center text-xl italic leading-relaxed text-coral sm:text-3xl">
           &ldquo;{latest.splitVerdict.banter}&rdquo;
           <footer className="flabel mt-3 not-italic">
             — the judge, on {latest.playerName}
@@ -127,15 +127,15 @@ export default function Leaderboard() {
         </blockquote>
       )}
 
-      <table className="w-full max-w-4xl border-separate border-spacing-y-1 text-2xl">
+      <table className="w-full max-w-4xl border-separate border-spacing-y-1 text-lg sm:text-2xl">
         <thead>
           <tr className="flabel text-left">
             <th className="px-4 pb-3 font-bold">#</th>
             <th className="pb-3 font-bold">Name</th>
-            <th className="pb-3 text-right font-bold">Gs</th>
-            <th className="pb-3 text-right font-bold">Harps</th>
+            <th className="hidden pb-3 text-right font-bold sm:table-cell">Gs</th>
+            <th className="hidden pb-3 text-right font-bold sm:table-cell">Harps</th>
             <th className="pb-3 text-right font-bold">Points</th>
-            <th className="pb-3 text-right font-bold">Attempts</th>
+            <th className="hidden pb-3 text-right font-bold sm:table-cell">Attempts</th>
             <th className="px-4 pb-3 text-right font-bold">Best</th>
           </tr>
         </thead>
@@ -149,10 +149,10 @@ export default function Leaderboard() {
                 {i === 0 ? '🏆' : i + 1}
               </td>
               <td className="py-3 font-bold">{p.name}</td>
-              <td className="py-3 text-right tabular-nums">{p.gs}</td>
-              <td className="py-3 text-right tabular-nums">{p.harps}</td>
-              <td className="py-3 text-right text-3xl font-bold tabular-nums">{p.points}</td>
-              <td className="py-3 text-right tabular-nums text-ink-soft">{p.attempts}</td>
+              <td className="hidden py-3 text-right tabular-nums sm:table-cell">{p.gs}</td>
+              <td className="hidden py-3 text-right tabular-nums sm:table-cell">{p.harps}</td>
+              <td className="py-3 text-right text-2xl font-bold tabular-nums sm:text-3xl">{p.points}</td>
+              <td className="hidden py-3 text-right tabular-nums text-ink-soft sm:table-cell">{p.attempts}</td>
               <td className="rounded-r-xl px-4 py-3 text-right tabular-nums">
                 {p.best != null ? p.best.toFixed(2) : '—'}
               </td>
@@ -174,7 +174,7 @@ export default function Leaderboard() {
             <h2 className="names text-4xl text-ink-mid">The wall of pints</h2>
             <div className="rule w-40" />
           </div>
-          <div className="w-full columns-2 gap-3 sm:columns-3 lg:columns-4 xl:columns-5">
+          <div className="w-full columns-1 gap-3 min-[430px]:columns-2 sm:columns-3 lg:columns-4 xl:columns-5">
             {recent.map((a) => (
               <PintCard key={a._id} a={a} />
             ))}
