@@ -5,7 +5,6 @@ import type {CaptureGeometry, Detection} from '@/lib/detector'
 
 type CameraStatus = 'starting' | 'live' | 'error'
 
-const LIVE_DETECTOR = process.env.NEXT_PUBLIC_LIVE_DETECTOR === '1'
 // The full-pint proof just needs a clear look at the glass; the split shot
 // needs real aim. Tolerances scale with the G's on-screen size so distance
 // from the camera doesn't change the difficulty.
@@ -14,16 +13,16 @@ const CAPTURE_TUNING = {
   split: {frames: 10, tolerance: (boxH: number) => Math.max(10, boxH * 0.2)},
 } as const
 
-// Live viewfinder for the bar-top iPad. Uses getUserMedia (requires HTTPS or
-// localhost); falls back to a native file input if the camera is unavailable.
-// When NEXT_PUBLIC_LIVE_DETECTOR=1 and a mode is given, an in-browser YOLO
-// model tracks the G live, shows a provisional score, and auto-captures when
-// the player holds steady (docs/live-detection-spec.md).
+// Live viewfinder. Uses getUserMedia (requires HTTPS or localhost). Capture is
+// detector-only: an in-browser YOLO model must lock onto the G and the beer
+// line, and it snaps automatically once the player holds steady
+// (docs/live-detection-spec.md). There is no manual shutter and no file
+// upload — if the model can't see a real pint, no photo leaves the phone.
 export function Camera({
   label,
   onCapture,
   mode = 'splitG',
-  phase,
+  phase = 'split',
 }: {
   label: string
   onCapture: (photo: Blob, geometry: CaptureGeometry | null) => void
@@ -44,30 +43,33 @@ export function Camera({
   const [facing, setFacing] = useState<'user' | 'environment'>('environment')
   const [liveScore, setLiveScore] = useState<number | null>(null)
   const [holding, setHolding] = useState(false)
-  // null = loading/not applicable, true = auto-capture armed, false = model failed
+  // null = loading, true = armed, false = model failed (retry re-arms)
   const [detectorReady, setDetectorReady] = useState<boolean | null>(null)
+  const [detectorAttempt, setDetectorAttempt] = useState(0)
 
-  const capture = useCallback(async () => {
+  // Snap the current frame — but only if the detector has a full reading
+  // (G box + beer line for split shots); otherwise report failure so the
+  // loop keeps watching instead of submitting a blind photo.
+  const capture = useCallback(async (): Promise<boolean> => {
     const video = videoRef.current
-    if (!video || !video.videoWidth) return
+    if (!video || !video.videoWidth) return false
+    let geometry: CaptureGeometry | null = null
+    if (phase === 'split') {
+      if (!lastDetRef.current) return false
+      const {toGeometry} = await import('@/lib/detector')
+      geometry = toGeometry(lastDetRef.current, video.videoWidth, video.videoHeight)
+      if (!geometry) return false
+    }
     const canvas = document.createElement('canvas')
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
     canvas.getContext('2d')!.drawImage(video, 0, 0)
-    // Geometry is only meaningful on the split shot; serialise the detection
-    // that's on screen right now so the verdict matches what the player saw.
-    let geometry: CaptureGeometry | null = null
-    if (phase === 'split' && lastDetRef.current) {
-      const {toGeometry} = await import('@/lib/detector')
-      geometry = toGeometry(lastDetRef.current, video.videoWidth, video.videoHeight)
-    }
-    canvas.toBlob(
-      (blob) => {
-        if (blob) onCapture(blob, geometry)
-      },
-      'image/jpeg',
-      0.85,
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.85),
     )
+    if (!blob) return false
+    onCapture(blob, geometry)
+    return true
   }, [onCapture, phase])
 
   useEffect(() => {
@@ -110,9 +112,9 @@ export function Camera({
     }
   }, [facing])
 
-  // Live detection loop (feature-flagged; silently disabled if model missing).
+  // Live detection loop — the only path to a photo.
   useEffect(() => {
-    if (!LIVE_DETECTOR || !phase || status !== 'live') return
+    if (status !== 'live') return
     let stopped = false
     let zonePixels: typeof import('@/lib/detector').zonePixels | null = null
     stableRef.current = {count: 0, last: null, captured: false}
@@ -159,7 +161,7 @@ export function Camera({
         detect = mod.detect
         zonePixels = mod.zonePixels
       } catch (err) {
-        console.error('Live detector unavailable, falling back to manual:', err)
+        console.error('Live detector failed to load:', err)
         setDetectorReady(false)
         return
       }
@@ -190,8 +192,11 @@ export function Camera({
               setHolding(s.count >= 2)
               if (s.count >= tuning.frames && !s.captured) {
                 s.captured = true
-                capture()
-                return
+                if (await capture()) return
+                // Incomplete reading (e.g. the line vanished at the last
+                // moment) — back to watching.
+                s.captured = false
+                s.count = 0
               }
             } else {
               s.count = Math.max(0, s.count - 2)
@@ -199,7 +204,7 @@ export function Camera({
               setHolding(false)
             }
           } catch (err) {
-            console.error('Live detection stopped, falling back to manual:', err)
+            console.error('Live detection stopped:', err)
             setDetectorReady(false)
             return
           }
@@ -212,38 +217,22 @@ export function Camera({
       stopped = true
       setDetectorReady(null)
     }
-  }, [mode, phase, status, capture])
-
-  const autoArmed = LIVE_DETECTOR && phase != null && detectorReady === true
-
-  const fileFallback = (
-    <label className="card flex cursor-pointer flex-col items-center gap-2 text-lg text-ink-deep">
-      Take a photo with the device camera instead
-      <input
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="text-base"
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) onCapture(file, null)
-        }}
-      />
-    </label>
-  )
+  }, [mode, phase, status, capture, detectorAttempt])
 
   if (status === 'error') {
     return (
       <div className="flex w-full max-w-md flex-col items-center gap-6 text-center">
         <p className="text-2xl italic text-ink-mid">{label}</p>
         <p className="text-lg text-coral">{errorDetail}</p>
+        <p className="text-base text-ink-mid">
+          The judge only accepts live shots straight from the camera — no photo, no verdict.
+        </p>
         <button
           onClick={() => setFacing(facing === 'user' ? 'environment' : 'user')}
           className="flabel underline decoration-ink-faint underline-offset-8"
         >
           try the other camera
         </button>
-        {fileFallback}
       </div>
     )
   }
@@ -286,34 +275,29 @@ export function Camera({
           </div>
         )}
       </div>
-      {autoArmed ? (
-        <p className="text-lg italic text-ink-mid">
-          No button needed — hold the pint steady and level, and it snaps itself.
-        </p>
-      ) : (
-        <button
-          onClick={capture}
-          disabled={status !== 'live'}
-          className="h-24 w-24 rounded-full border-4 border-paper bg-ink shadow-[0_8px_30px_rgba(65,65,152,0.3)] transition active:scale-90 disabled:opacity-30"
-          aria-label="Take photo"
-        />
-      )}
-      <div className="flex items-center gap-8">
-        {autoArmed && (
-          <button
-            onClick={capture}
-            className="flabel underline decoration-ink-faint underline-offset-8"
-          >
-            snap manually
+      {detectorReady === false ? (
+        <div className="flex flex-col items-center gap-4 text-center">
+          <p className="max-w-md text-lg text-coral">
+            The pint-spotter couldn&apos;t start in this browser, and the judge only accepts
+            photos it has seen the G in. Try reloading, or borrow a friend&apos;s phone.
+          </p>
+          <button onClick={() => setDetectorAttempt((n) => n + 1)} className="fbtn">
+            try again
           </button>
-        )}
-        <button
-          onClick={() => setFacing(facing === 'user' ? 'environment' : 'user')}
-          className="flabel underline decoration-ink-faint underline-offset-8"
-        >
-          flip camera
-        </button>
-      </div>
+        </div>
+      ) : (
+        <p className="text-lg italic text-ink-mid">
+          {detectorReady
+            ? 'No button needed — hold the pint steady and level, and it snaps itself.'
+            : 'Warming up the pint-spotter…'}
+        </p>
+      )}
+      <button
+        onClick={() => setFacing(facing === 'user' ? 'environment' : 'user')}
+        className="flabel underline decoration-ink-faint underline-offset-8"
+      >
+        flip camera
+      </button>
     </div>
   )
 }

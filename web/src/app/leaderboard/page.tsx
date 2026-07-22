@@ -3,6 +3,8 @@
 import {useEffect, useState} from 'react'
 import Link from 'next/link'
 import {PintsSign} from '@/components/Brand'
+import {BottomNav} from '@/components/Nav'
+import {weddingDayStarted, type Board} from '@/lib/wedding'
 
 type Row = {
   _id: string
@@ -79,12 +81,16 @@ export default function Leaderboard() {
   const [players, setPlayers] = useState<Row[]>([])
   const [latest, setLatest] = useState<Latest>(null)
   const [recent, setRecent] = useState<Recent[]>([])
+  // Once the big day starts, the TV and every phone open on the wedding board.
+  const [board, setBoard] = useState<Board>(() =>
+    weddingDayStarted() ? 'wedding' : 'practice',
+  )
 
   useEffect(() => {
     let active = true
     const load = async () => {
       try {
-        const res = await fetch('/api/leaderboard')
+        const res = await fetch(`/api/leaderboard?board=${board}`)
         if (res.ok && active) {
           const data = await res.json()
           setPlayers(data.players ?? [])
@@ -101,10 +107,10 @@ export default function Leaderboard() {
       active = false
       clearInterval(interval)
     }
-  }, [])
+  }, [board])
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center gap-8 px-5 py-8 sm:gap-10 sm:px-10 sm:py-12">
+    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center gap-8 px-5 py-8 pb-28 sm:gap-10 sm:px-10 sm:py-12 sm:pb-28">
       <header className="flex flex-col items-center gap-1 text-center">
         <p className="hello">
           sláinte<span className="dot">•</span>skål
@@ -115,6 +121,35 @@ export default function Leaderboard() {
         <p className="flabel mt-2">the wedding championship</p>
         <p className="text-sm text-ink-mid">Serine &amp; Eóin &middot; 24 July 2026</p>
         <div className="rule mt-3 w-80" />
+        <div className="mt-5 flex items-center gap-2 rounded-full border-[1.5px] border-ink-faint bg-white/45 p-1">
+          {(
+            [
+              {key: 'wedding', label: 'the big day'},
+              {key: 'practice', label: 'practice'},
+            ] as {key: Board; label: string}[]
+          ).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => {
+                if (tab.key === board) return
+                setPlayers([])
+                setLatest(null)
+                setRecent([])
+                setBoard(tab.key)
+              }}
+              className={`flabel rounded-full px-5 py-2 transition ${
+                board === tab.key ? 'bg-ink text-paper' : 'text-ink-mid'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-sm italic text-ink-mid">
+          {board === 'wedding'
+            ? 'only pints poured on 24 July count here'
+            : 'every warm-up pint before (and after) the big day'}
+        </p>
       </header>
 
       {latest?.splitVerdict?.banter && (
@@ -161,7 +196,9 @@ export default function Leaderboard() {
           {players.length === 0 && (
             <tr>
               <td colSpan={7} className="py-16 text-center text-2xl italic text-ink-soft">
-                No pints judged yet. Get pouring.
+                {board === 'wedding'
+                  ? 'The big-day board is bare — first pint of the wedding takes the early lead.'
+                  : 'No pints judged yet. Get pouring.'}
               </td>
             </tr>
           )}
@@ -184,10 +221,11 @@ export default function Leaderboard() {
 
       <footer className="mt-auto flex flex-col items-center gap-4 pt-6">
         <Link href="/" className="flabel underline decoration-ink-faint underline-offset-8">
-          back to the bar
+          back to the feed
         </Link>
         <PintsSign />
       </footer>
+      <BottomNav />
     </main>
   )
 }

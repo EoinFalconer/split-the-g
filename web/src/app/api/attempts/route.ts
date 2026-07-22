@@ -8,8 +8,18 @@ export async function POST(req: Request) {
   const photo = form.get('photo')
   const mode = form.get('mode') === 'dropHarp' ? 'dropHarp' : 'splitG'
   const geometry = parseGeometry(form.get('geometry'))
+  const venueRaw = form.get('venue')
+  const venue = typeof venueRaw === 'string' ? venueRaw.trim().slice(0, 80) : ''
   if (typeof playerId !== 'string' || !(photo instanceof File)) {
     return NextResponse.json({error: 'playerId and photo are required'}, {status: 400})
+  }
+  // No manual snaps: every photo must arrive with the live detector's reading
+  // of the G and the beer line, or it never becomes an attempt.
+  if (!geometry) {
+    return NextResponse.json(
+      {error: 'The camera needs to recognise the G and the line before it can submit'},
+      {status: 400},
+    )
   }
 
   const buffer = Buffer.from(await photo.arrayBuffer())
@@ -29,6 +39,7 @@ export async function POST(req: Request) {
       asset: {_type: 'reference', _ref: asset._id},
     },
     ...(geometry && {localGeometry: {_type: 'localGeometry', ...geometry}}),
+    ...(venue && {venue}),
   })
 
   return NextResponse.json({_id: attempt._id})

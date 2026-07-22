@@ -85,6 +85,10 @@ body {
   background: transparent;
   color: var(--color-ink);
 }
+.fbtn-sm {
+  padding: 8px 18px 7px;
+  font-size: 15px;
+}
 
 /* hand-drawn wobbly card, like the RSVP option cards */
 .optcard {

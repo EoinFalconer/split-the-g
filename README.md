@@ -1,20 +1,29 @@
 # Split the G 🍺
 
-Wedding-bar game: pick your name on the kiosk iPad, choose your challenge (Split the G, or
-the old-school Drop the Harp), hold your glass up after your sip, and Claude judges where
-the beer line landed. Most targets hit by the end of the night wins. The viewfinder tracks
-the G live (in-browser YOLO) and snaps automatically — no buttons, drunk-proof by design.
+Wedding-bar game: pick your name, choose your challenge (Split the G, or the old-school
+Drop the Harp), hold your glass up after your sip, and Claude judges where the beer line
+landed. Most targets hit by the end of the night wins. The viewfinder tracks the G live
+(in-browser YOLO) and snaps automatically — capture is detector-only: no shutter button,
+no file upload, and the API rejects any split photo arriving without the detector's
+G-and-line geometry.
 
 ## How it works
 
 ```
-iPad kiosk (Next.js, web/)
+guest phones (Next.js, web/)
+  /            Instagram-style feed of judged pints — like each other's splits
+  /play        the game: name → challenge → auto-capture → verdict
+  /leaderboard TV board with two championships: "the big day" (24 July only)
+               and "practice" (every other pint); tabs default to the big day
+               once it starts (window lives in src/lib/wedding.ts)
   └─ photo → Sanity (attempt document + image asset)
        └─ Sanity Function (functions/judge-pint) fires on create/update
             └─ Claude Haiku judges the photo (vision + structured output)
                  └─ patches the verdict back onto the attempt
-  └─ kiosk polls the attempt, shows verdict/banter
-TV (/leaderboard) polls a GROQ aggregation every 4s
+  └─ /play polls the attempt, shows verdict/banter
+  └─ likes live on the attempt doc (likes[], keyed by an anonymous per-device
+     id) — scored attempts never re-trigger the judge, so hearts are free
+TV (/leaderboard) polls a GROQ aggregation every 4s; the feed polls every 8s
 ```
 
 The schema and judge still support an optional full-pint verification photo (`fullPint` +

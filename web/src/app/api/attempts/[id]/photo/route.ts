@@ -18,6 +18,13 @@ export async function POST(
       {status: 400},
     )
   }
+  // Split retakes are detector-only too — same rule as a fresh attempt.
+  if (phase === 'split' && !geometry) {
+    return NextResponse.json(
+      {error: 'The camera needs to recognise the G and the line before it can submit'},
+      {status: 400},
+    )
+  }
 
   const buffer = Buffer.from(await photo.arrayBuffer())
   const asset = await sanity.assets.upload('image', buffer, {
