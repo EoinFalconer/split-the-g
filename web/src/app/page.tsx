@@ -4,6 +4,7 @@ import {useCallback, useEffect, useRef, useState} from 'react'
 import Link from 'next/link'
 import {PourLoader, PintsSign} from '@/components/Brand'
 import {BottomNav} from '@/components/Nav'
+import {scorePct, perfectLabel, fmtPoints} from '@/lib/score'
 
 type Geometry = {
   boxX?: number
@@ -21,6 +22,7 @@ type Post = {
   imgW: number | null
   imgH: number | null
   split: boolean
+  points: number
   score: number | null
   banter: string | null
   caption: string | null
@@ -125,7 +127,13 @@ function PostCard({post, onLike}: {post: Post; onLike: (post: Post) => void}) {
         <span
           className={`flabel shrink-0 ${post.split ? 'text-coral' : 'text-ink-soft'}`}
         >
-          {post.split ? (post.mode === 'dropHarp' ? 'harp dropped' : 'G split!') : 'miss'}
+          {!post.split
+            ? 'miss'
+            : post.mode === 'dropHarp'
+              ? 'harp dropped!'
+              : post.points === 1
+                ? 'perfect split!'
+                : `split · ${fmtPoints(post.points)} pt`}
         </span>
       </header>
 
@@ -169,14 +177,16 @@ function PostCard({post, onLike}: {post: Post; onLike: (post: Post) => void}) {
           <Heart filled={post.liked} />
           <span className="text-lg font-bold tabular-nums">{post.likes > 0 ? post.likes : ''}</span>
         </button>
-        <span className="ml-auto text-lg font-bold tabular-nums text-ink">
-          {post.score != null && (
-            <>
-              {post.score.toFixed(2)}
-              <span className="font-normal text-ink-soft"> / 5</span>
-            </>
-          )}
-        </span>
+        {post.score != null && (
+          <span className="ml-auto flex flex-col items-end">
+            <span className="text-lg font-bold leading-tight tabular-nums text-ink">
+              {scorePct(post.score)}%
+            </span>
+            <span className="text-[10px] leading-tight text-ink-soft">
+              {perfectLabel(post.mode)}
+            </span>
+          </span>
+        )}
       </div>
 
       {slainte && <p className="px-4 pt-1 text-sm text-ink-soft">{slainte}</p>}
@@ -246,12 +256,12 @@ export default function Feed() {
       )
       if (!res.ok) return
       const {items, hasMore: more} = await res.json()
-      setPosts((prev) => {
-        if (!prev) return items
-        const known = new Set(prev.map((p) => p._id))
-        return [...prev, ...items.filter((i: Post) => !known.has(i._id))]
-      })
-      setHasMore(more)
+      const known = new Set((postsRef.current ?? []).map((p) => p._id))
+      const fresh = items.filter((i: Post) => !known.has(i._id))
+      setPosts((prev) => (prev ? [...prev, ...fresh] : items))
+      // Belt and braces: a page of already-seen posts means the cursor can't
+      // advance — stop asking rather than loop on the same page.
+      setHasMore(fresh.length > 0 && more)
     } finally {
       loadingMoreRef.current = false
     }

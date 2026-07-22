@@ -6,6 +6,8 @@ import {Camera} from '@/components/Camera'
 import {Brand, PintsSign, PourLoader} from '@/components/Brand'
 import type {CaptureGeometry} from '@/lib/detector'
 import {lookupVenue} from '@/lib/venue'
+import {scorePct, perfectLabel, fmtPoints} from '@/lib/score'
+import {ZoneDiagram} from '@/components/ZoneDiagram'
 
 type Player = {_id: string; name: string}
 
@@ -14,29 +16,38 @@ type Attempt = {
   status: string
   lastRejection?: string
   fullPintVerdict?: {banter?: string}
-  splitVerdict?: {split: boolean; score: number; banter?: string; reason?: string}
+  splitVerdict?: {split: boolean; points?: number; score: number; banter?: string; reason?: string}
 }
 
 type Phase = 'welcome' | 'pickPlayer' | 'pickMode' | 'captureSplit' | 'judgingSplit' | 'result'
 
 type Mode = 'splitG' | 'dropHarp'
 
-const MODES: Record<Mode, {title: React.ReactNode; tagline: string; aim: string; win: string}> = {
+const MODES: Record<
+  Mode,
+  {title: React.ReactNode; tagline: string; aim: string; win: string; miss: string; perfect: string}
+> = {
   splitG: {
     title: (
       <>
         Split the <span className="split-g">G</span>
       </>
     ),
-    tagline: 'land the line through the heart of the G',
+    tagline: 'middle of the G = 1 point · elsewhere on the G = ½ point',
     aim: 'Aim for the heart of the G.',
     win: 'G split!',
+    miss: 'No split',
+    perfect:
+      'Through the middle of the G (a little leeway allowed) = 1 point. Anywhere else on the G = ½ point. Off the G = nothing. The % is how close to dead centre you came.',
   },
   dropHarp: {
     title: <>Drop the Harp</>,
-    tagline: 'the old-school way — land it between the harp and the word',
+    tagline: 'the old-school way — the gap below the harp: 1 point or nothing',
     aim: 'Land it in the gap below the harp.',
     win: 'Harp dropped!',
+    miss: 'Harp still standing',
+    perfect:
+      'All or nothing: land the line in the gap between the harp and the word for the full point. The % is how close to dead centre of the gap you came.',
   },
 }
 
@@ -50,7 +61,8 @@ const HOW_TO_STEPS: {title: string; body: string}[] = [
   {title: 'Pick your name', body: 'Find yourself on the list (or join in) so your score lands on the board.'},
   {title: 'Take your sip', body: 'One honest gulp — you’re aiming to leave the beer line right in the middle of the G on the glass.'},
   {title: 'Show the camera', body: 'Hold the glass up with the G facing the camera and keep it steady — it snaps by itself. And keep it level: the judge disqualifies tilted pints.'},
-  {title: 'Face the judge', body: 'Claude rules on every pint. A clean split is a point on the board — most points by the end of the night takes the championship.'},
+  {title: 'Face the judge', body: 'Claude rules on every pint. A clean hit is a point on the board — most points by the end of the night takes the championship.'},
+  {title: 'The score', body: 'Split the G: line through the middle of the G (a little leeway) = 1 point, anywhere else on the G = ½ point, off the G = nothing. Drop the Harp is all or nothing: the gap below the harp = 1 point. The percentage just brags how close to dead centre you came.'},
 ]
 
 export default function Play() {
@@ -390,9 +402,14 @@ export default function Play() {
                 }}
                 className="optcard"
               >
-                <span className="names block text-4xl text-ink">{MODES[m].title}</span>
-                <span className="mt-1 block text-[15px] italic text-ink-mid">
-                  {MODES[m].tagline}
+                <span className="flex items-center gap-5 text-left">
+                  <ZoneDiagram mode={m} className="h-28 w-auto shrink-0" />
+                  <span className="min-w-0">
+                    <span className="names block text-4xl text-ink">{MODES[m].title}</span>
+                    <span className="mt-1 block text-[15px] italic text-ink-mid">
+                      {MODES[m].tagline}
+                    </span>
+                  </span>
                 </span>
               </button>
             ))}
@@ -436,15 +453,29 @@ export default function Play() {
           {attempt.splitVerdict.split ? (
             <p className="names shimmer text-7xl sm:text-8xl">{MODES[mode].win}</p>
           ) : (
-            <p className="names text-6xl text-ink-soft sm:text-7xl">No split</p>
+            <p className="names text-6xl text-ink-soft sm:text-7xl">{MODES[mode].miss}</p>
           )}
-          <p className="text-5xl font-bold tabular-nums text-ink sm:text-6xl">
-            {attempt.splitVerdict.score.toFixed(2)}
-            <span className="text-3xl font-normal text-ink-soft"> / 5.00</span>
-          </p>
-          {attempt.splitVerdict.split && (
-            <p className="flabel text-coral">+1 point on the board</p>
-          )}
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-6xl font-bold tabular-nums text-ink sm:text-7xl">
+              {scorePct(attempt.splitVerdict.score)}
+              <span className="text-4xl font-normal text-ink-soft">%</span>
+              <span className="ml-3 text-xl font-normal italic text-ink-mid">
+                {perfectLabel(mode)}
+              </span>
+            </p>
+            <p className="max-w-sm text-sm leading-relaxed text-ink-mid">{MODES[mode].perfect}</p>
+          </div>
+          {(() => {
+            const v = attempt.splitVerdict
+            const pts = v.points ?? (v.split ? 1 : 0)
+            if (pts === 0) return null
+            return (
+              <p className="flabel text-coral">
+                +{fmtPoints(pts)} point{pts > 1 ? 's' : ''} on the board
+                {pts === 0.5 && ' — on the G, not the middle'}
+              </p>
+            )
+          })()}
           {attempt.splitVerdict.banter && (
             <p className="max-w-xl text-xl italic leading-relaxed text-coral sm:text-2xl">
               &ldquo;{attempt.splitVerdict.banter}&rdquo;

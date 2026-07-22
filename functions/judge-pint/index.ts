@@ -17,6 +17,10 @@ interface AttemptEvent {
 // letting the LLM judge the whole thing.
 const GEOMETRY_CONF_MIN = 0.5
 
+// Full-point band for Split the G: middle of the G ± this leeway (fraction of
+// the G's height). Mirrors PERFECT_HALF in web/src/lib/detector.ts.
+const PERFECT_HALF = 0.15
+
 const MODEL = 'claude-haiku-4-5'
 
 const FULL_PINT_SCHEMA: Record<string, unknown> = {
@@ -60,6 +64,11 @@ const SPLIT_SCHEMA: Record<string, unknown> = {
       type: 'boolean',
       description: 'True if the beer/foam boundary line landed in the target zone for the challenge described in the prompt',
     },
+    perfect: {
+      type: 'boolean',
+      description:
+        'Split the G only: true if the line passes through the MIDDLE of the G (the central third of the letter). For Drop the Harp, set it equal to split.',
+    },
     score: {
       type: 'number',
       description:
@@ -72,7 +81,7 @@ const SPLIT_SCHEMA: Record<string, unknown> = {
         'One short line of warm Irish-pub-style commentary addressed to the player, suitable for a wedding bar screen',
     },
   },
-  required: ['validPhoto', 'glassLevel', 'split', 'score', 'reason', 'banter'],
+  required: ['validPhoto', 'glassLevel', 'split', 'perfect', 'score', 'reason', 'banter'],
   additionalProperties: false,
 }
 
@@ -136,16 +145,27 @@ async function judgeImage(
 const CHALLENGES = {
   splitG: {
     title: 'Split the G',
+    hitNoun: 'split',
     target: `the boundary line between the dark beer and the white head should pass through the
 letter G of the GUINNESS wordmark printed on the glass. Dead centre of the G is a perfect 5.0;
-anywhere within the G counts as a hit; a line above or below the G is a miss.`,
+anywhere within the G counts as a hit; a line above or below the G is a miss. Points: through
+the MIDDLE of the G (central third) = 1 full point; elsewhere on the G = half a point; off the
+G = nothing.`,
+    language: `Speak the language of Split the G: they split the G (or missed it). If you
+mention the score, say it as a percentage of a perfect split.`,
   },
   dropHarp: {
     title: 'Drop the Harp',
+    hitNoun: 'drop',
     target: `the boundary line between the dark beer and the white head should land in the gap
 between the bottom of the harp emblem and the top of the GUINNESS wordmark on the glass — the
 old-school challenge. Dead centre of that gap is a perfect 5.0; anywhere within the gap counts
-as a hit; a line touching the harp or the lettering is a miss.`,
+as a hit; a line touching the harp or the lettering is a miss. Points: all or nothing — in the
+gap = 1 point, anywhere else = 0.`,
+    language: `Speak the language of Drop the Harp — an entirely different art from Split the G.
+They dropped the harp, or the harp is still standing. NEVER say "split" and never talk about
+the G: the target here is the gap below the harp. If you mention the score, say it as a
+percentage of a perfect drop.`,
   },
 } as const
 
@@ -203,9 +223,22 @@ no sip visibly taken. A partially drunk pint, a different beer, or an empty/abse
     if (trustGeometry) {
       const score = Math.max(0, Math.min(5, Number(geo!.score) || 0))
       const split = Boolean(geo!.split)
+      const pct = Math.round(score * 20)
+      // Points from measured geometry: Split the G pays 1 for the middle of
+      // the G (± leeway), ½ elsewhere on the G; Drop the Harp is 1 or 0.
+      const lineInG = typeof geo!.lineInG === 'number' ? geo!.lineInG : null
+      const points = !split
+        ? 0
+        : mode === 'dropHarp' || (lineInG != null && Math.abs(lineInG - 0.5) <= PERFECT_HALF)
+          ? 1
+          : 0.5
       const outcome = split
-        ? `they HIT it — the line landed inside the target, scoring ${score.toFixed(2)} out of 5`
-        : `they MISSED — the line did not land in the target (a ${score.toFixed(2)} out of 5)`
+        ? points === 1
+          ? mode === 'dropHarp'
+            ? `they DROPPED the harp — the line sits clean in the gap, the full point (${pct}% of a perfect drop)`
+            : `a ${pct}% split through the MIDDLE of the G — the full point`
+          : `they split the G, but off-centre — half a point (${pct}% of a perfect split)`
+        : `they MISSED the target — no points (${pct}% of a perfect ${challenge.hitNoun})`
       const verdict = await judgeImage(
         splitPintUrl,
         `${player} is playing "${challenge.title}". A precise detector has already measured the
@@ -215,7 +248,7 @@ screenshot or a photo of a screen; (2) check for the tilt cheat — the detector
 by a player tilting the glass so the beer line slides into the target, so if the beer line is
 clearly slanted relative to the glass itself (its rim, sides and lettering), the glass was
 tilted; (3) write one line of banter that matches the measured result — celebrate a clean hit,
-commiserate a miss, tease a near-thing.`,
+commiserate a miss, tease a near-thing. ${challenge.language}`,
         VALIDATE_SCHEMA,
       )
 
@@ -248,6 +281,7 @@ commiserate a miss, tease a near-thing.`,
         .set({
           splitVerdict: {
             split,
+            points,
             score: Math.round(score * 100) / 100,
             source: 'geometry',
             reason: verdict.reason,
@@ -258,7 +292,7 @@ commiserate a miss, tease a near-thing.`,
         })
         .unset(['lastRejection'])
         .commit()
-      console.log(`Split judged by geometry for ${player}: split=${split} score=${score}`)
+      console.log(`Split judged by geometry for ${player}: split=${split} points=${points} score=${score}`)
       return
     }
 
@@ -270,7 +304,7 @@ commiserate a miss, tease a near-thing.`,
 Locate the logo, locate the beer line, and judge whether the target was hit and how cleanly.
 Also check for the tilt cheat: if the beer line is clearly slanted relative to the glass
 itself (its rim, sides and lettering), the glass was tilted to slide the line into the target.
-Be fair but strict.`,
+Be fair but strict. ${challenge.language}`,
       SPLIT_SCHEMA,
     )
 
@@ -298,11 +332,13 @@ Be fair but strict.`,
     }
 
     const score = Math.max(0, Math.min(5, Number(verdict.score) || 0))
+    const points = !verdict.split ? 0 : mode === 'dropHarp' || verdict.perfect ? 1 : 0.5
     await client
       .patch(_id)
       .set({
         splitVerdict: {
           split: Boolean(verdict.split),
+          points,
           score: Math.round(score * 100) / 100,
           source: 'llm',
           reason: verdict.reason,
@@ -313,6 +349,6 @@ Be fair but strict.`,
       })
       .unset(['lastRejection'])
       .commit()
-    console.log(`Split judged by LLM for ${player}: split=${verdict.split} score=${score}`)
+    console.log(`Split judged by LLM for ${player}: split=${verdict.split} points=${points} score=${score}`)
   }
 })

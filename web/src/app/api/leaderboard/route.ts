@@ -19,8 +19,13 @@ export async function GET(req: Request) {
       "gs": count(*[_type == "attempt" && ${day} && player._ref == ^._id && coalesce(mode, "splitG") == "splitG" && splitVerdict.split == true]),
       "harps": count(*[_type == "attempt" && ${day} && player._ref == ^._id && mode == "dropHarp" && splitVerdict.split == true]),
       "attempts": count(*[_type == "attempt" && ${day} && player._ref == ^._id && defined(splitVerdict)]),
-      "best": math::max(*[_type == "attempt" && ${day} && player._ref == ^._id && defined(splitVerdict)].splitVerdict.score)
-    }[attempts > 0]{..., "points": gs + harps} | order(points desc, best desc),
+      "best": math::max(*[_type == "attempt" && ${day} && player._ref == ^._id && defined(splitVerdict)].splitVerdict.score),
+      // 1 for the middle of the G / the harp gap, ½ for an off-centre split.
+      // Attempts judged before points existed pay the old flat 1 per hit.
+      "points": math::sum(*[_type == "attempt" && ${day} && player._ref == ^._id && defined(splitVerdict)]{
+        "v": coalesce(splitVerdict.points, select(splitVerdict.split => 1, 0))
+      }.v)
+    }[attempts > 0] | order(points desc, best desc),
     "latest": *[_type == "attempt" && ${day} && status == "scored"] | order(splitVerdict.judgedAt desc)[0]{
       "playerName": player->name,
       "mode": coalesce(mode, "splitG"),

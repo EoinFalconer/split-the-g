@@ -5,6 +5,7 @@ import Link from 'next/link'
 import {PintsSign} from '@/components/Brand'
 import {BottomNav} from '@/components/Nav'
 import {weddingDayStarted, type Board} from '@/lib/wedding'
+import {scorePct, fmtPoints} from '@/lib/score'
 
 type Row = {
   _id: string
@@ -68,8 +69,8 @@ function PintCard({a}: {a: Recent}) {
         <figcaption className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-ink-deep via-ink-deep/60 to-transparent px-3 pb-2 pt-6 text-sm">
           <span className="font-bold text-paper">{a.playerName}</span>
           <span className={`tabular-nums ${a.split ? 'text-coral-soft' : 'text-paper/60'}`}>
-            {a.split ? (a.mode === 'dropHarp' ? 'harp' : 'split') : 'miss'}
-            {a.score != null && ` · ${a.score.toFixed(2)}`}
+            {a.split ? (a.mode === 'dropHarp' ? 'harp dropped' : 'split') : 'miss'}
+            {a.score != null && ` · ${scorePct(a.score)}%`}
           </span>
         </figcaption>
       </div>
@@ -186,10 +187,10 @@ export default function Leaderboard() {
               <td className="py-3 font-bold">{p.name}</td>
               <td className="hidden py-3 text-right tabular-nums sm:table-cell">{p.gs}</td>
               <td className="hidden py-3 text-right tabular-nums sm:table-cell">{p.harps}</td>
-              <td className="py-3 text-right text-2xl font-bold tabular-nums sm:text-3xl">{p.points}</td>
+              <td className="py-3 text-right text-2xl font-bold tabular-nums sm:text-3xl">{fmtPoints(p.points)}</td>
               <td className="hidden py-3 text-right tabular-nums text-ink-soft sm:table-cell">{p.attempts}</td>
               <td className="rounded-r-xl px-4 py-3 text-right tabular-nums">
-                {p.best != null ? p.best.toFixed(2) : '—'}
+                {p.best != null ? `${scorePct(p.best)}%` : '—'}
               </td>
             </tr>
           ))}

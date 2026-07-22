@@ -23,6 +23,7 @@ export async function GET(req: Request) {
         "imgW": splitPint.asset->metadata.dimensions.width,
         "imgH": splitPint.asset->metadata.dimensions.height,
         "split": splitVerdict.split,
+        "points": coalesce(splitVerdict.points, select(splitVerdict.split => 1, 0)),
         "score": splitVerdict.score,
         "banter": splitVerdict.banter,
         caption,

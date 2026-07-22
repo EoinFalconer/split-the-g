@@ -2,6 +2,7 @@
 
 import {useCallback, useEffect, useRef, useState} from 'react'
 import type {CaptureGeometry, Detection} from '@/lib/detector'
+import {scorePct} from '@/lib/score'
 
 type CameraStatus = 'starting' | 'live' | 'error'
 
@@ -117,6 +118,7 @@ export function Camera({
     if (status !== 'live') return
     let stopped = false
     let zonePixels: typeof import('@/lib/detector').zonePixels | null = null
+    let perfectZonePixels: typeof import('@/lib/detector').perfectZonePixels | null = null
     stableRef.current = {count: 0, last: null, captured: false}
 
     const draw = (det: Detection | null) => {
@@ -137,11 +139,18 @@ export function Camera({
       ctx.lineWidth = Math.max(3, canvas.width / 200)
       ctx.strokeRect(box.x, box.y, box.w, box.h)
       if (phase === 'split') {
-        // Faint band showing the target zone you're aiming the line into.
+        // Faint band = the scoring zone; stronger inner band = the full point.
         if (zonePixels) {
           const {top, bottom} = zonePixels(box, mode)
           ctx.fillStyle = 'rgba(224, 106, 69, 0.18)'
           ctx.fillRect(left, top, right - left, bottom - top)
+        }
+        if (perfectZonePixels) {
+          const inner = perfectZonePixels(box, mode)
+          if (inner) {
+            ctx.fillStyle = 'rgba(224, 106, 69, 0.3)'
+            ctx.fillRect(left, inner.top, right - left, inner.bottom - inner.top)
+          }
         }
         if (lineY != null) {
           ctx.strokeStyle = det.hit ? '#e06a45' : '#f6f0e1'
@@ -160,6 +169,7 @@ export function Camera({
         await mod.loadDetector()
         detect = mod.detect
         zonePixels = mod.zonePixels
+        perfectZonePixels = mod.perfectZonePixels
       } catch (err) {
         console.error('Live detector failed to load:', err)
         setDetectorReady(false)
@@ -266,7 +276,7 @@ export function Camera({
         )}
         {(liveScore != null || holding) && (
           <div className="absolute left-1/2 top-5 -translate-x-1/2 rounded-full bg-paper/90 px-5 py-2 text-2xl font-bold tabular-nums text-ink">
-            {liveScore != null && liveScore.toFixed(2)}
+            {liveScore != null && `${scorePct(liveScore)}%`}
             {holding && (
               <span className={`italic text-ink-mid ${liveScore != null ? 'ml-3 text-base' : 'text-xl'}`}>
                 hold it…

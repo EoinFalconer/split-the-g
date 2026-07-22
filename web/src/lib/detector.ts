@@ -169,6 +169,21 @@ export const ZONES = {
   dropHarp: {center: -0.35, half: 0.55},
 } as const
 
+// The full-point band for Split the G: the middle of the G with a little
+// leeway (±15% of the G's height). Inside it = 1 point, elsewhere on the
+// G = ½ point. Mirrored in functions/judge-pint — keep the values in sync.
+export const PERFECT_HALF = 0.15
+
+// Inner full-point band in source-video pixels (Split the G only — Drop the
+// Harp is all or nothing, the whole zone is the full point).
+export function perfectZonePixels(box: GBox, mode: 'splitG' | 'dropHarp') {
+  if (mode !== 'splitG') return null
+  return {
+    top: box.y + (0.5 - PERFECT_HALF) * box.h,
+    bottom: box.y + (0.5 + PERFECT_HALF) * box.h,
+  }
+}
+
 // Target band in source-video pixels, for drawing the aim guide on the overlay.
 export function zonePixels(box: GBox, mode: 'splitG' | 'dropHarp') {
   const z = ZONES[mode]
