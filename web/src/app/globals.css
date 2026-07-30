@@ -161,11 +161,11 @@ body {
 .shimmer {
   background: linear-gradient(
     100deg,
-    #33337b 0%,
-    #6a6aae 25%,
-    #e06a45 50%,
-    #6a6aae 75%,
-    #33337b 100%
+    var(--color-ink-deep) 0%,
+    var(--color-ink-mid) 25%,
+    var(--color-coral) 50%,
+    var(--color-ink-mid) 75%,
+    var(--color-ink-deep) 100%
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;

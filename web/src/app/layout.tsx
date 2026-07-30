@@ -22,8 +22,8 @@ const bodyFont = Nunito_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'Split the G — Serine & Eóin',
-  description: 'The official Split the G wedding championship',
+  title: 'Split the G — the pint game for your event',
+  description: 'Create a Split the G championship for your wedding, stag, or night out.',
 }
 
 export const viewport: Viewport = {

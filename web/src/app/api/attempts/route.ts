@@ -10,6 +10,8 @@ export async function POST(req: Request) {
   const geometry = parseGeometry(form.get('geometry'))
   const venueRaw = form.get('venue')
   const venue = typeof venueRaw === 'string' ? venueRaw.trim().slice(0, 80) : ''
+  const eventIdRaw = form.get('eventId')
+  const eventId = typeof eventIdRaw === 'string' && eventIdRaw ? eventIdRaw : null
   if (typeof playerId !== 'string' || !(photo instanceof File)) {
     return NextResponse.json({error: 'playerId and photo are required'}, {status: 400})
   }
@@ -55,6 +57,7 @@ export async function POST(req: Request) {
     }),
     ...(geometry && {localGeometry: {_type: 'localGeometry', ...geometry}}),
     ...(venue && {venue}),
+    ...(eventId && {event: {_type: 'reference', _ref: eventId}}),
   })
 
   return NextResponse.json({_id: attempt._id})

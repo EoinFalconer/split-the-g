@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises'
 import {join} from 'node:path'
 import {sanity} from '@/lib/sanity'
 import {scorePct, perfectLabel, fmtPoints} from '@/lib/score'
+import {WEDDING_EVENT, APP_URL} from '@/lib/event'
 
 export const runtime = 'nodejs'
 
@@ -11,14 +12,18 @@ export const runtime = 'nodejs'
 // BeReal, and the score. Shareable straight to a story to pull new players in.
 const W = 1080
 const H = 1920
-
 const PAPER = '#f6f0e1'
-const INK = '#414198'
-const INK_MID = '#6a6aae'
-const INK_SOFT = '#9c9ccb'
-const CORAL = '#e06a45'
 
 const pct = (n: number) => `${n * 100}%`
+
+// Satori has no color-mix; blend hex ourselves to derive the ink ramp per theme.
+function mixHex(a: string, b: string, t: number): string {
+  const h = (s: string) => [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16))
+  const [r1, g1, b1] = h(a)
+  const [r2, g2, b2] = h(b)
+  const c = (x: number, y: number) => Math.round(x + (y - x) * t)
+  return `#${[c(r1, r2), c(g1, g2), c(b1, b2)].map((v) => v.toString(16).padStart(2, '0')).join('')}`
+}
 
 // Mini Moniker (display) is bundled; Nunito Sans (body) is best-effort from a
 // CDN — if it can't be fetched we fall back to the display face everywhere.
@@ -46,6 +51,8 @@ function loadFonts() {
 
 export async function GET(_req: Request, {params}: {params: Promise<{id: string}>}) {
   const {id} = await params
+  // Show whatever domain is serving the card (product vs shrine).
+  const APP_HOST = _req.headers.get('host') || new URL(APP_URL).host
   const a = await sanity.fetch(
     `*[_type == "attempt" && _id == $id && status == "scored"][0]{
       "playerName": player->name,
@@ -58,11 +65,23 @@ export async function GET(_req: Request, {params}: {params: Promise<{id: string}
       "points": coalesce(splitVerdict.points, select(splitVerdict.split => 1, 0)),
       "score": splitVerdict.score,
       venue,
-      localGeometry{boxX, boxY, boxW, boxH, lineYNorm}
+      localGeometry{boxX, boxY, boxW, boxH, lineYNorm},
+      "themeInk": event->themeInk,
+      "themeCoral": event->themeCoral,
+      "kicker": event->kicker,
+      "signoff": event->signoff
     }`,
     {id},
   )
   if (!a) return new Response('Not found', {status: 404})
+
+  // Theme from the attempt's event; legacy wedding pints use the classic look.
+  const INK = a.themeInk || WEDDING_EVENT.theme.ink
+  const CORAL = a.themeCoral || WEDDING_EVENT.theme.coral
+  const INK_MID = mixHex(INK, PAPER, 0.35)
+  const INK_SOFT = mixHex(INK, PAPER, 0.55)
+  const kicker = (a.kicker || WEDDING_EVENT.kicker).toUpperCase()
+  const signoff = a.signoff || WEDDING_EVENT.signoff
 
   const fonts = await loadFonts()
   const body = fonts.some((f) => f.name === 'Nunito') ? 'Nunito' : 'Moniker'
@@ -106,7 +125,7 @@ export async function GET(_req: Request, {params}: {params: Promise<{id: string}
             </div>
           </div>
           <div style={{display: 'flex', fontSize: 22, letterSpacing: 5, color: INK_MID, fontWeight: 700, marginTop: 6}}>
-            THE WEDDING CHAMPIONSHIP
+            {kicker}
           </div>
         </div>
 
@@ -179,11 +198,13 @@ export async function GET(_req: Request, {params}: {params: Promise<{id: string}
 
         <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
           <div style={{display: 'flex', fontSize: 34, fontWeight: 700, letterSpacing: 1, color: INK}}>
-            split-the-g.eoin.no
+            {APP_HOST}
           </div>
-          <div style={{display: 'flex', fontFamily: 'Moniker', fontSize: 30, color: CORAL, marginTop: 4}}>
-            le grá • med kjærlighet
-          </div>
+          {signoff ? (
+            <div style={{display: 'flex', fontFamily: 'Moniker', fontSize: 30, color: CORAL, marginTop: 4}}>
+              {signoff}
+            </div>
+          ) : null}
         </div>
       </div>
     ),

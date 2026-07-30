@@ -1,5 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 
+import type {EventConfig} from '@/lib/event'
+
 // Split the wordmark into wiggling letters, like the invitation's SplitText
 function WiggleText({text}: {text: string}) {
   return (
@@ -19,22 +21,21 @@ function WiggleText({text}: {text: string}) {
   )
 }
 
-export function Brand({compact = false}: {compact?: boolean}) {
+export function Brand({event, compact = false}: {event: EventConfig; compact?: boolean}) {
   return (
     <div className="flex flex-col items-center gap-1 text-center">
-      {!compact && (
-        <p className="hello">
-          sláinte<span className="dot">•</span>skål
-        </p>
+      {!compact && event.hello && (
+        <p className="hello">{withDot(event.hello)}</p>
       )}
       <h1 className={`names ${compact ? 'text-5xl' : 'text-6xl sm:text-7xl'} mt-1`}>
         <WiggleText text="Split the " />
         <span className="split-g">G</span>
       </h1>
-      <p className="flabel mt-2">
-        the wedding championship
+      <p className="flabel mt-2">{event.kicker}</p>
+      <p className="text-sm text-ink-mid">
+        {event.name}
+        {event.dateLabel ? ` · ${event.dateLabel}` : ''}
       </p>
-      <p className="text-sm text-ink-mid">Serine &amp; Eóin &middot; 24 July 2026</p>
       <div className="rule mt-3 w-56" />
     </div>
   )
@@ -49,13 +50,28 @@ export function PourLoader({message}: {message: string}) {
   )
 }
 
-export function PintsSign({className = ''}: {className?: string}) {
+// Render a "sláinte • skål"-style greeting with the middle bullet styled.
+export function withDot(text: string) {
+  const parts = text.split('•')
+  if (parts.length < 2) return text
+  return (
+    <>
+      {parts[0].trim()}
+      <span className="dot">•</span>
+      {parts.slice(1).join('•').trim()}
+    </>
+  )
+}
+
+export function PintsSign({signoff = '', className = ''}: {signoff?: string; className?: string}) {
   return (
     <div className={`flex flex-col items-center gap-2 ${className}`}>
       <img src="/pints-blue.svg" alt="" className="h-9 w-auto" />
-      <p className="hello" style={{fontSize: 17}}>
-        le grá<span className="dot">•</span>med kjærlighet
-      </p>
+      {signoff && (
+        <p className="hello" style={{fontSize: 17}}>
+          {withDot(signoff)}
+        </p>
+      )}
     </div>
   )
 }
