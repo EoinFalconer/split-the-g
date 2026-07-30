@@ -24,13 +24,17 @@ export function Camera({
   onCapture,
   mode = 'splitG',
   phase = 'split',
+  withSelfie = true,
 }: {
   label: string
-  onCapture: (photo: Blob, geometry: CaptureGeometry | null) => void
+  onCapture: (photo: Blob, geometry: CaptureGeometry | null, selfie?: Blob) => void
   mode?: 'splitG' | 'dropHarp'
   // 'full': auto-capture when the G logo is held steady (no line/score needed).
   // 'split': auto-capture when the beer line is held steady; shows live score.
   phase?: 'full' | 'split'
+  // BeReal second shot after a split: flip to the front camera and grab the
+  // drinker. Split shots only; degrades to pint-only if the front cam won't open.
+  withSelfie?: boolean
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const overlayRef = useRef<HTMLCanvasElement>(null)
@@ -47,6 +51,13 @@ export function Camera({
   // null = loading, true = armed, false = model failed (retry re-arms)
   const [detectorReady, setDetectorReady] = useState<boolean | null>(null)
   const [detectorAttempt, setDetectorAttempt] = useState(0)
+  const [loadPct, setLoadPct] = useState(0)
+  // 'hunt' = finding the G, 'selfie' = the front-camera countdown after a split.
+  const [stage, setStage] = useState<'hunt' | 'selfie'>('hunt')
+  const [countdown, setCountdown] = useState<number | null>(null)
+  const pendingRef = useRef<{blob: Blob; geometry: CaptureGeometry | null} | null>(null)
+  const selfieRunRef = useRef(false)
+  const doSelfie = phase === 'split' && withSelfie
 
   // Snap the current frame — but only if the detector has a full reading
   // (G box + beer line for split shots); otherwise report failure so the
@@ -69,9 +80,16 @@ export function Camera({
       canvas.toBlob(resolve, 'image/jpeg', 0.85),
     )
     if (!blob) return false
+    // Split shots earn the BeReal second act: stash the pint, flip to the
+    // front camera and grab the drinker. Everything else submits straight away.
+    if (doSelfie) {
+      pendingRef.current = {blob, geometry}
+      setStage('selfie')
+      return true
+    }
     onCapture(blob, geometry)
     return true
-  }, [onCapture, phase])
+  }, [onCapture, phase, doSelfie])
 
   useEffect(() => {
     let cancelled = false
@@ -113,9 +131,9 @@ export function Camera({
     }
   }, [facing])
 
-  // Live detection loop — the only path to a photo.
+  // Live detection loop — the only path to a photo. Pauses during the selfie.
   useEffect(() => {
-    if (status !== 'live') return
+    if (status !== 'live' || stage !== 'hunt') return
     let stopped = false
     let zonePixels: typeof import('@/lib/detector').zonePixels | null = null
     let perfectZonePixels: typeof import('@/lib/detector').perfectZonePixels | null = null
@@ -227,9 +245,85 @@ export function Camera({
       stopped = true
       setDetectorReady(null)
     }
-  }, [mode, phase, status, capture, detectorAttempt])
+  }, [mode, phase, status, capture, detectorAttempt, stage])
 
-  if (status === 'error') {
+  // While the camera is live but the model is still loading, poll its download
+  // progress for the in-frame warming bar.
+  useEffect(() => {
+    if (status !== 'live' || detectorReady !== null) return
+    let stopped = false
+    let timer: ReturnType<typeof setTimeout>
+    import('@/lib/detector').then(({getLoadProgress}) => {
+      const tick = () => {
+        if (stopped) return
+        setLoadPct(getLoadProgress())
+        timer = setTimeout(tick, 200)
+      }
+      tick()
+    })
+    return () => {
+      stopped = true
+      clearTimeout(timer)
+    }
+  }, [status, detectorReady])
+
+  // Submit whatever we have — the pint, plus a selfie if we got one.
+  const finish = useCallback(
+    (selfie: Blob | null) => {
+      const p = pendingRef.current
+      if (!p) return
+      pendingRef.current = null
+      onCapture(p.blob, p.geometry, selfie ?? undefined)
+    },
+    [onCapture],
+  )
+
+  const snapSelfie = useCallback(async () => {
+    const video = videoRef.current
+    if (!video || !video.videoWidth) return finish(null)
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')!
+    // Mirror to match the selfie preview the guest was just smiling into.
+    ctx.translate(canvas.width, 0)
+    ctx.scale(-1, 1)
+    ctx.drawImage(video, 0, 0)
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.85))
+    finish(blob)
+  }, [finish])
+
+  // Selfie stage: flip to the front camera, give it a beat to open, then count
+  // 3-2-1 and snap. Time-based (not status-driven) so it can't start counting
+  // against the stale rear-camera frame. If the front camera never produces a
+  // frame, snapSelfie falls back to submitting the pint alone.
+  useEffect(() => {
+    if (stage !== 'selfie' || selfieRunRef.current) return
+    selfieRunRef.current = true
+    setFacing('user')
+    let n = 3
+    const timers: ReturnType<typeof setTimeout>[] = []
+    // ~1.1s for the front camera to open (and for them to turn the phone round).
+    timers.push(
+      setTimeout(() => {
+        setCountdown(n)
+        const id = setInterval(() => {
+          n -= 1
+          if (n > 0) {
+            setCountdown(n)
+          } else {
+            clearInterval(id)
+            setCountdown(null)
+            snapSelfie()
+          }
+        }, 800)
+        timers.push(id)
+      }, 1100),
+    )
+    return () => timers.forEach((t) => clearTimeout(t))
+  }, [stage, snapSelfie])
+
+  if (status === 'error' && stage !== 'selfie') {
     return (
       <div className="flex w-full max-w-md flex-col items-center gap-6 text-center">
         <p className="text-2xl italic text-ink-mid">{label}</p>
@@ -251,7 +345,9 @@ export function Camera({
 
   return (
     <div className="flex w-full flex-col items-center gap-7">
-      <p className="max-w-lg text-center text-xl italic text-ink-mid sm:text-2xl">{label}</p>
+      <p className="max-w-lg text-center text-xl italic text-ink-mid sm:text-2xl">
+        {stage === 'selfie' ? 'Now you — big smile for the wall!' : label}
+      </p>
       <div className="relative w-full max-w-md rounded-3xl border-[1.5px] border-ink-faint bg-white/45 p-2">
         {/* Mirror the front-camera preview like a mirror; captures stay unmirrored */}
         <video
@@ -264,8 +360,21 @@ export function Camera({
         />
         <canvas
           ref={overlayRef}
-          className={`pointer-events-none absolute inset-2 h-[calc(100%-1rem)] w-[calc(100%-1rem)] rounded-2xl object-cover ${mirrored}`}
+          className={`pointer-events-none absolute inset-2 h-[calc(100%-1rem)] w-[calc(100%-1rem)] rounded-2xl object-cover ${mirrored} ${
+            stage === 'selfie' ? 'opacity-0' : ''
+          }`}
         />
+        {stage === 'selfie' && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            {countdown != null ? (
+              <span className="names text-[8rem] leading-none text-paper drop-shadow-[0_4px_20px_rgba(51,51,89,0.6)]">
+                {countdown}
+              </span>
+            ) : (
+              <span className="flabel rounded-full bg-paper/90 px-5 py-2 text-ink">say cheese…</span>
+            )}
+          </div>
+        )}
         {status === 'starting' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-2xl">
             <div className="h-12 w-12 animate-spin rounded-full border-4 border-ink-faint border-t-ink" />
@@ -274,7 +383,24 @@ export function Camera({
             </p>
           </div>
         )}
-        {(liveScore != null || holding) && (
+        {/* Camera is live but the detector is still downloading — say so IN the
+            frame, so the dead-looking feed reads as "not ready yet", not broken. */}
+        {stage === 'hunt' && status === 'live' && detectorReady === null && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-2xl bg-paper/75 backdrop-blur-[2px]">
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-ink-faint border-t-ink" />
+            <p className="px-8 text-center text-xl italic text-ink-mid">
+              Warming up the pint detector…
+            </p>
+            <div className="h-1.5 w-40 overflow-hidden rounded-full bg-ink-faint/60">
+              <div
+                className="h-full rounded-full bg-ink transition-[width] duration-200 ease-out"
+                style={{width: `${Math.max(8, Math.round(loadPct * 100))}%`}}
+              />
+            </div>
+            <p className="flabel">this only happens once</p>
+          </div>
+        )}
+        {stage === 'hunt' && (liveScore != null || holding) && (
           <div className="absolute left-1/2 top-5 -translate-x-1/2 rounded-full bg-paper/90 px-5 py-2 text-2xl font-bold tabular-nums text-ink">
             {liveScore != null && `${scorePct(liveScore)}%`}
             {holding && (
@@ -285,29 +411,38 @@ export function Camera({
           </div>
         )}
       </div>
-      {detectorReady === false ? (
-        <div className="flex flex-col items-center gap-4 text-center">
-          <p className="max-w-md text-lg text-coral">
-            The pint-spotter couldn&apos;t start in this browser, and the judge only accepts
-            photos it has seen the G in. Try reloading, or borrow a friend&apos;s phone.
-          </p>
-          <button onClick={() => setDetectorAttempt((n) => n + 1)} className="fbtn">
-            try again
-          </button>
-        </div>
+      {stage === 'selfie' ? (
+        <button
+          onClick={() => finish(null)}
+          className="flabel underline decoration-ink-faint underline-offset-8"
+        >
+          skip the selfie
+        </button>
       ) : (
-        <p className="text-lg italic text-ink-mid">
-          {detectorReady
-            ? 'No button needed — hold the pint steady and level, and it snaps itself.'
-            : 'Warming up the pint-spotter…'}
-        </p>
+        <>
+          {detectorReady === false ? (
+            <div className="flex flex-col items-center gap-4 text-center">
+              <p className="max-w-md text-lg text-coral">
+                The pint-spotter couldn&apos;t start in this browser, and the judge only accepts
+                photos it has seen the G in. Try reloading, or borrow a friend&apos;s phone.
+              </p>
+              <button onClick={() => setDetectorAttempt((n) => n + 1)} className="fbtn">
+                try again
+              </button>
+            </div>
+          ) : detectorReady ? (
+            <p className="text-lg italic text-ink-mid">
+              No button needed — hold the pint steady and level, and it snaps itself.
+            </p>
+          ) : null}
+          <button
+            onClick={() => setFacing(facing === 'user' ? 'environment' : 'user')}
+            className="flabel underline decoration-ink-faint underline-offset-8"
+          >
+            flip camera
+          </button>
+        </>
       )}
-      <button
-        onClick={() => setFacing(facing === 'user' ? 'environment' : 'user')}
-        className="flabel underline decoration-ink-faint underline-offset-8"
-      >
-        flip camera
-      </button>
     </div>
   )
 }

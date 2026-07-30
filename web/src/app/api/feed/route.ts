@@ -22,6 +22,7 @@ export async function GET(req: Request) {
         "img": splitPint.asset->url,
         "imgW": splitPint.asset->metadata.dimensions.width,
         "imgH": splitPint.asset->metadata.dimensions.height,
+        "selfie": selfie.asset->url,
         "split": splitVerdict.split,
         "points": coalesce(splitVerdict.points, select(splitVerdict.split => 1, 0)),
         "score": splitVerdict.score,

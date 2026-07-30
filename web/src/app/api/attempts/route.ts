@@ -28,6 +28,18 @@ export async function POST(req: Request) {
     contentType: photo.type || 'image/jpeg',
   })
 
+  // Optional BeReal-style second shot of the drinker.
+  const selfieFile = form.get('selfie')
+  let selfieAssetId: string | null = null
+  if (selfieFile instanceof File) {
+    const selfieAsset = await sanity.assets.upload(
+      'image',
+      Buffer.from(await selfieFile.arrayBuffer()),
+      {filename: `selfie-${Date.now()}.jpg`, contentType: selfieFile.type || 'image/jpeg'},
+    )
+    selfieAssetId = selfieAsset._id
+  }
+
   // Drunk-proof flow: the attempt starts straight at the split photo.
   const attempt = await sanity.create({
     _type: 'attempt',
@@ -38,6 +50,9 @@ export async function POST(req: Request) {
       _type: 'image',
       asset: {_type: 'reference', _ref: asset._id},
     },
+    ...(selfieAssetId && {
+      selfie: {_type: 'image', asset: {_type: 'reference', _ref: selfieAssetId}},
+    }),
     ...(geometry && {localGeometry: {_type: 'localGeometry', ...geometry}}),
     ...(venue && {venue}),
   })

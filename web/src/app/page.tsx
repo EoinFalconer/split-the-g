@@ -27,6 +27,7 @@ type Post = {
   banter: string | null
   caption: string | null
   venue: string | null
+  selfie: string | null
   createdAt: string
   localGeometry: Geometry | null
   likes: number
@@ -164,6 +165,16 @@ function PostCard({post, onLike}: {post: Post; onLike: (post: Post) => void}) {
             )}
           </div>
         )}
+        {post.selfie && (
+          /* BeReal-style: the drinker, tucked in the corner of their pint */
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`${post.selfie}?w=240&h=320&fit=crop&auto=format`}
+            alt={`${post.playerName} taking the sip`}
+            loading="lazy"
+            className="absolute right-3 top-3 h-28 w-20 rounded-lg border-2 border-paper object-cover shadow-[0_4px_14px_rgba(51,51,89,0.4)]"
+          />
+        )}
       </div>
 
       <div className="flex items-center gap-2 px-4 pt-3">
@@ -177,6 +188,17 @@ function PostCard({post, onLike}: {post: Post; onLike: (post: Post) => void}) {
           <Heart filled={post.liked} />
           <span className="text-lg font-bold tabular-nums">{post.likes > 0 ? post.likes : ''}</span>
         </button>
+        <Link
+          href={`/share/${post._id}`}
+          aria-label="Share this pint"
+          className="text-ink-mid transition active:scale-90"
+        >
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+            <path d="M12 15V3" />
+            <path d="M8 7l4-4 4 4" />
+          </svg>
+        </Link>
         {post.score != null && (
           <span className="ml-auto flex flex-col items-end">
             <span className="text-lg font-bold leading-tight tabular-nums text-ink">

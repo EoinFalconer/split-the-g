@@ -43,12 +43,24 @@ export async function POST(
       .set({fullPint: imageField, status: 'judgingFullPint'})
       .commit()
   } else {
+    // Optional BeReal-style second shot of the drinker on a split retake.
+    const selfieFile = form.get('selfie')
+    let selfieField: typeof imageField | null = null
+    if (selfieFile instanceof File) {
+      const selfieAsset = await sanity.assets.upload(
+        'image',
+        Buffer.from(await selfieFile.arrayBuffer()),
+        {filename: `selfie-${Date.now()}.jpg`, contentType: selfieFile.type || 'image/jpeg'},
+      )
+      selfieField = {_type: 'image', asset: {_type: 'reference', _ref: selfieAsset._id}}
+    }
     await sanity
       .patch(id)
       .set({
         splitPint: imageField,
         status: 'judgingSplit',
         ...(geometry && {localGeometry: {_type: 'localGeometry', ...geometry}}),
+        ...(selfieField && {selfie: selfieField}),
       })
       .unset(geometry ? [] : ['localGeometry'])
       .commit()

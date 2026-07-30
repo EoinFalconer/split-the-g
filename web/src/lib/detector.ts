@@ -59,14 +59,53 @@ export function toGeometry(
 }
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null
+// 0..1 model-load progress: download fraction, then 1 once the session compiles.
+// The camera reads this to show a real progress bar while warming up.
+let loadProgress = 0
+
+export function getLoadProgress(): number {
+  return loadProgress
+}
 
 export function loadDetector(): Promise<ort.InferenceSession> {
   if (!sessionPromise) {
     ort.env.wasm.wasmPaths = '/ort/'
-    sessionPromise = ort.InferenceSession.create(MODEL_URL, {
-      executionProviders: ['webgpu', 'wasm'],
-    }).catch((err) => {
+    // Stream the model ourselves so we can report real download progress, then
+    // hand the bytes to ORT (which still has to compile — hence the 0.95 cap
+    // until the session is actually ready).
+    sessionPromise = (async () => {
+      const res = await fetch(MODEL_URL)
+      const total = Number(res.headers.get('content-length')) || 0
+      const reader = res.body?.getReader()
+      let bytes: Uint8Array
+      if (reader && total > 0) {
+        const chunks: Uint8Array[] = []
+        let received = 0
+        for (;;) {
+          const {done, value} = await reader.read()
+          if (done) break
+          chunks.push(value)
+          received += value.length
+          loadProgress = Math.min(0.95, received / total)
+        }
+        bytes = new Uint8Array(received)
+        let offset = 0
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset)
+          offset += chunk.length
+        }
+      } else {
+        bytes = new Uint8Array(await res.arrayBuffer())
+        loadProgress = 0.95
+      }
+      const session = await ort.InferenceSession.create(bytes, {
+        executionProviders: ['webgpu', 'wasm'],
+      })
+      loadProgress = 1
+      return session
+    })().catch((err) => {
       sessionPromise = null
+      loadProgress = 0
       throw err
     })
   }

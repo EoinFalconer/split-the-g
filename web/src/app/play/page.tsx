@@ -92,6 +92,14 @@ export default function Play() {
       // corrupt value — ignore and ask for a name
     }
     setVenue(window.localStorage.getItem(VENUE_KEY) ?? '')
+    // Warm the detector now, while they pick a name and challenge — the model
+    // is a few MB and a cold load at the camera is the slowest moment. By the
+    // time they hold up a pint it's usually already compiled.
+    import('@/lib/detector')
+      .then((m) => m.loadDetector())
+      .catch(() => {
+        // the camera screen will surface the failure and offer a retry
+      })
   }, [])
 
   // The game is one page with no routes; give the back button/swipe meaning by
@@ -160,7 +168,7 @@ export default function Play() {
   }, [])
 
   const startAttempt = useCallback(
-    async (photo: Blob, geometry: CaptureGeometry | null) => {
+    async (photo: Blob, geometry: CaptureGeometry | null, selfie?: Blob) => {
       if (!player) return
       setPhase('judgingSplit')
       setNotice(null)
@@ -169,6 +177,7 @@ export default function Play() {
       form.append('mode', mode)
       form.append('photo', photo, 'split.jpg')
       if (geometry) form.append('geometry', JSON.stringify(geometry))
+      if (selfie) form.append('selfie', selfie, 'selfie.jpg')
       // Tag the post with the last-used venue right away; the result screen
       // lets the player change it.
       const savedVenue = window.localStorage.getItem(VENUE_KEY)?.trim()
@@ -182,7 +191,7 @@ export default function Play() {
   )
 
   const retakePhoto = useCallback(
-    async (photo: Blob, geometry: CaptureGeometry | null) => {
+    async (photo: Blob, geometry: CaptureGeometry | null, selfie?: Blob) => {
       if (!attempt) return
       setPhase('judgingSplit')
       setNotice(null)
@@ -190,6 +199,7 @@ export default function Play() {
       form.append('photo', photo, 'split.jpg')
       form.append('phase', 'split')
       if (geometry) form.append('geometry', JSON.stringify(geometry))
+      if (selfie) form.append('selfie', selfie, 'selfie.jpg')
       await fetch(`/api/attempts/${attempt._id}/photo`, {method: 'POST', body: form})
       pollUntilJudged(attempt._id)
     },
@@ -434,8 +444,10 @@ export default function Play() {
           }. Keep the glass level!`}
           phase="split"
           mode={mode}
-          onCapture={(photo, geometry) =>
-            attempt ? retakePhoto(photo, geometry) : startAttempt(photo, geometry)
+          onCapture={(photo, geometry, selfie) =>
+            attempt
+              ? retakePhoto(photo, geometry, selfie)
+              : startAttempt(photo, geometry, selfie)
           }
         />
       )}
@@ -530,7 +542,12 @@ export default function Play() {
               )}
             </div>
           </div>
-          <button onClick={reset} className="fbtn mt-2">
+          {attempt._id && (
+            <Link href={`/share/${attempt._id}`} className="fbtn fbtn-outline mt-2">
+              share your pint
+            </Link>
+          )}
+          <button onClick={reset} className="fbtn">
             Next challenger
           </button>
           <Link href="/" className="flabel underline decoration-ink-faint underline-offset-8">
